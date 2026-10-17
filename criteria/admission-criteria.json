@@ -1,0 +1,226 @@
+{
+  "title": "Recuperative Care Admission Criteria and Eligibility Outline (adults)",
+  "source": "Transcribed from the document Illumination Health + Home provided for the October 17, 2026 Claude Impact Lab. Rule text is IHH's wording. IDs and the 'kind' field were added by the organizers. Two small cleanups were made for machine use: a doubled comma in INT-E2 and the cut-off ending of DM-Q3. The markdown file keeps the source's wording, typos included.",
+  "precedence": "When the referral form screen (FORM-*) and the admission criteria outline disagree, the outline wins: it is IHH's internal rulebook. Settled conflicts: FORM-X6 (sex offender) yields to OTH-2 (case by case); FORM-M6 and FORM-X3 (walk 100 ft) yield to MOB-3 and MOB-4 (wheelchair-dependent patients who transfer independently are eligible). Where the outline is silent (tuberculosis, refusing detox), the form's exclusion applies.",
+  "kinds": {
+    "must": "The patient has to meet this.",
+    "exclude": "The patient is not eligible if this is true.",
+    "document": "Something the hospital has to send in the packet.",
+    "conditional": "Allowed only if the stated arrangement is confirmed before admission.",
+    "ask": "A question IHH wants answered. Not a pass/fail rule on its own.",
+    "note": "Context."
+  },
+  "general": {
+    "rule": "Meets one or more of the following",
+    "any_of": [
+      {"id": "GEN-1", "text": "Homeless/at risk of homelessness and too ill or frail to recover from illness or injury"},
+      {"id": "GEN-2", "text": "Lives alone with no formal supports and too ill or frail to recover from illness or injury"},
+      {"id": "GEN-3", "text": "At risk of hospitalization or re-hospitalization after hospitalization"}
+    ]
+  },
+  "rules": [
+    {"id": "ADL-1", "section": "ADLs", "kind": "must", "text": "Able to complete all Activities of Daily Living (ADLs) independently including personal hygiene"},
+    {"id": "ADL-2", "section": "ADLs", "kind": "must", "text": "Patient must be able to complete personal hygiene independently. Benches are available for bathing so seated shower is acceptable. Patient must be able to gather all of their own bathing/showering supplies, transfer to shower area and perform shower/bath independently"},
+    {"id": "ADL-3", "section": "ADLs", "kind": "must", "text": "Able to toilet independently and/or change briefs/diapers independently"},
+
+    {"id": "MOB-1", "section": "Mobility", "kind": "must", "text": "If using DME (wheelchair, walker, etc) must be able to use independently"},
+    {"id": "MOB-2", "section": "Mobility", "kind": "document", "text": "PT/OT notes must be sent for review"},
+    {"id": "MOB-3", "section": "Mobility", "kind": "must", "text": "Patient must be able to ambulate at least 100 ft (rest breaks are acceptable) at modified independence if not wheelchair dependent"},
+    {"id": "MOB-4", "section": "Mobility", "kind": "must", "text": "Wheelchair dependent patients must be able to transfer independently"},
+
+    {"id": "MH-1", "section": "Mental Health", "kind": "must", "text": "Patient must be mentally stable on medications"},
+    {"id": "MH-2", "section": "Mental Health", "kind": "exclude", "text": "No suicidal ideation"},
+    {"id": "MH-3", "section": "Mental Health", "kind": "exclude", "text": "No commanding auditory or visual hallucinations"},
+    {"id": "MH-4", "section": "Mental Health", "kind": "must", "text": "If a patient was admitted with acute alcohol intoxication, the patient must be held for at least 72 hours and not have signs of alcohol withdrawal (maintain a CIWA-AR score of <8, if being assessed with this tool) prior to admission to recuperative care."},
+    {"id": "MH-5", "section": "Mental Health", "kind": "exclude", "text": "Cannot qualify, have history of or currently be under a conservatorship or FSP"},
+
+    {"id": "COG-1", "section": "Cognition", "kind": "must", "text": "Must be capable of self-administering medications (must confirm that patient can self-administer insulin) and receiving medical education"},
+    {"id": "COG-2", "section": "Cognition", "kind": "must", "text": "AOx4"},
+
+    {"id": "OTH-1", "section": "Other Factors", "kind": "exclude", "text": "Ineligible if client is verbally or physically aggressive towards staff or other patients"},
+    {"id": "OTH-2", "section": "Other Factors", "kind": "note", "text": "Patients that are registered sex offenders will be evaluated on a case-by-case basis (however, as a general guide, any offense that involves violence will likely be denied", "human_review": true},
+    {"id": "OTH-3", "section": "Other Factors", "kind": "conditional", "text": "Patients with IV access can be accepted if they have home health established to maintain the IV and administer the medication as needed. There is no limit on time for IV"},
+    {"id": "OTH-4", "section": "Other Factors", "kind": "exclude", "text": "Cannot accept patients on isolation unless isolation status is cleared prior to admission to recuperative care"},
+
+    {"id": "EOL-1", "section": "End of life care", "kind": "conditional", "text": "Hospice patients are eligible for recuperative care admission. Hospice services must be arranged prior to admission to recuperative care and patient, family and other involved parties must be made aware that recuperative care staff cannot administer medications, these medications will be administered by hospice staff"},
+
+    {"id": "INF-1", "section": "Infection Control", "kind": "document", "text": "MRSA swab, documented negative prior to recuperative care admission if coming from inpatient hospitalization"},
+    {"id": "INF-2", "section": "Infection Control", "kind": "document", "text": "Covid swab (rapid swab acceptable) documented negative within 24 hours of recuperative care admission if coming from inpatient admission"},
+
+    {"id": "DM-1", "section": "Diabetes", "kind": "document", "text": "If patient is being referred from inpatient hospitalization, 5 consecutive glucose readings should be sent. Readings must be show improvement and stabilization."},
+    {"id": "DM-2", "section": "Diabetes", "kind": "must", "text": "If admitted from the emergency department, it must be established and documented that the patient is not in DKA."},
+    {"id": "DM-3", "section": "Diabetes", "kind": "exclude", "text": "We will not accept a diabetic patient that was started on an insulin regimen less than 24 hours prior to admission."},
+    {"id": "DM-4", "section": "Diabetes", "kind": "conditional", "text": "Poorly controlled diabetics on an oral medication or established insulin regimen may be accepted from the ED if they have follow up with a primary care provider scheduled within the next 5-7 days, have not had an episode of hypoglycemia within the last week and have a written treatment plan for glucose control (i.e. sliding scale parameters, medication hold guidelines, etc)."},
+    {"id": "DM-5", "section": "Diabetes", "kind": "must", "text": "Patient should understand how to use glucometer"},
+    {"id": "DM-6", "section": "Diabetes", "kind": "must", "text": "Patient should understand insulin administration, if applicable"},
+    {"id": "DM-Q1", "section": "Diabetes", "kind": "ask", "text": "Does the patient use insulin? Is the insulin administered through a pump?"},
+    {"id": "DM-Q2", "section": "Diabetes", "kind": "ask", "text": "Does the patient take oral medication?"},
+    {"id": "DM-Q3", "section": "Diabetes", "kind": "ask", "text": "What was the patient's last hemoglobin A1C? This is not a limiting factor for admission but does provide important information about the patient's baseline glucose level"},
+
+    {"id": "ID-1", "section": "Infection", "kind": "document", "text": "The last 5 sets of vital signs should be sent. Patient is ineligible for recuperative care if VS show signs of sepsis (continued fever, elevated heart rate, low blood pressure)"},
+    {"id": "ID-2", "section": "Infection", "kind": "must", "text": "The patient should be able to administer oral antibiotics independently"},
+    {"id": "ID-3", "section": "Infection", "kind": "conditional", "text": "If IV antibiotics are required, home health care should be ordered before admission to recuperative care to maintain IV and administer antibiotics"},
+    {"id": "ID-Q1", "section": "Infection", "kind": "ask", "text": "Location of infection?"},
+    {"id": "ID-Q2", "section": "Infection", "kind": "ask", "text": "Were cultures performed? Results should be sent"},
+    {"id": "ID-Q3", "section": "Infection", "kind": "ask", "text": "Is the patient on isolation?"},
+
+    {"id": "RESP-1", "section": "Respiratory Illness", "kind": "document", "text": "Chest imaging should be sent (Chest XR, CT, MRI) when available"},
+    {"id": "RESP-2", "section": "Respiratory Illness", "kind": "document", "text": "The last 5 sets of vital signs should be sent, if available; O2 saturation may be chronically low if patient has a history of COPD, readings should be stable and consistent with patient's normal O2 saturation"},
+    {"id": "RESP-3", "section": "Respiratory Illness", "kind": "conditional", "text": "If O2 is required, the hospital must order it and have the tank ready to be sent to the site the day before the client arrives at the recuperative care site"},
+    {"id": "RESP-4", "section": "Respiratory Illness", "kind": "document", "text": "Respiratory therapy notes should be sent"},
+    {"id": "RESP-Q1", "section": "Respiratory Illness", "kind": "ask", "text": "Is the patient receiving any breathing treatments? If so, what are they?"},
+    {"id": "RESP-Q2", "section": "Respiratory Illness", "kind": "ask", "text": "Is the patient on antibiotics for this condition?"},
+
+    {"id": "CARD-1", "section": "Cardiac", "kind": "document", "text": "The last 5 sets of vital signs should be sent. Patient's BP should be stable on oral medication for at least 24 hours"},
+    {"id": "CARD-2", "section": "Cardiac", "kind": "document", "text": "If patient had a troponin in the hospital, at least 3 consecutive results should be sent with at least 2 negative results"},
+    {"id": "CARD-3", "section": "Cardiac", "kind": "document", "text": "EKG results should be sent"},
+    {"id": "CARD-4", "section": "Cardiac", "kind": "must", "text": "If patient has a history of atrial fibrillation or has been diagnosed with atrial fibrillation, patient should be able to take anticoagulation therapy independently and understand any associated lab work (i.e. INR) necessary to track this medication"},
+    {"id": "CARD-5", "section": "Cardiac", "kind": "exclude", "text": "Ejection Fraction of 25% or higher may be accepted as long as this has been established to be the patient's baseline. If the patient is on chemotherapy or is being immediately discharged from hospitalization for heart attack with a lowered ejection fraction, this patient is ineligible for recuperative care"},
+    {"id": "CARD-6", "section": "Cardiac", "kind": "exclude", "text": "Patient will not be accepted for admission to recuperative care if IV blood pressure medications have been required within 24 hours"}
+  ],
+  "by_system": [
+    {"system": "Integumentary", "eligible": [
+      {"id": "INT-E1", "text": "Uncomplicated infections of the skin, cellulitis or abscess, requiring oral antibiotic treatments"},
+      {"id": "INT-E2", "text": "Wound care to be coordinated with home health agency prior to arrival at recuperative care and should coincide with the frequency of dressing changes or wound monitoring. If a patient should have a dressing change or wound check within 24 hours of discharge from the hospital, wound care should be arranged to arrive to recuperative care within 24 hours. Additionally, all wounds in hard-to-reach areas (coccyx, back of thighs, back, perineum) will require at least one visit from wound care in the recuperative care setting regardless of patient's ability to change the dressing in a hospital setting.", "kind": "conditional"},
+      {"id": "INT-E3", "text": "IV antibiotics are allowed as long as home health has been coordinated to maintain the IV and either patient is able to administer their own IV antibiotics or home health will be administering the antibiotic", "kind": "conditional"},
+      {"id": "INT-E4", "text": "Uncomplicated wounds (e.g. laceration without infection)"},
+      {"id": "INT-E5", "text": "Post-surgical incision. If staples or external sutures are placed, appropriate follow up should be scheduled for removal prior to admission to recuperative care", "kind": "conditional"},
+      {"id": "INT-E6", "text": "Stage 1, 2, 3 pressure ulcers. Wound care to be coordinated and scheduled prior to admission to recuperative care", "kind": "conditional"},
+      {"id": "INT-E7", "text": "Third degree burns that affect <15% of the body. Wound care to be coordinated with home health agency prior to admission to recuperative care", "kind": "conditional"}
+    ], "ineligible": [
+      {"id": "INT-X1", "text": "Complicated wounds requiring skin grafting"},
+      {"id": "INT-X2", "text": "Complicated large abscess"},
+      {"id": "INT-X3", "text": "Burns associated with inhalation injury"}
+    ]},
+    {"system": "Ophthalmology", "eligible": [
+      {"id": "OPH-E1", "text": "Uncomplicated infections of the eye"},
+      {"id": "OPH-E2", "text": "Post-op glaucoma surgery"},
+      {"id": "OPH-E3", "text": "Cataract surgery requiring extraction with lens implant (uncomplicated situation)"},
+      {"id": "OPH-E4", "text": "Diabetic retinopathy"},
+      {"id": "OPH-E5", "text": "Diabetic macular edema"},
+      {"id": "OPH-E6", "text": "Post operative admission for vitreous hemorrhage, if patient meets all other criteria"},
+      {"id": "OPH-E7", "text": "Post operative admission for retinal detachment, if patient meets all other criteria"}
+    ], "ineligible": []},
+    {"system": "Respiratory", "eligible": [
+      {"id": "RSP-E1", "text": "Pneumonia"},
+      {"id": "RSP-E2", "text": "Bronchitis"},
+      {"id": "RSP-E3", "text": "COPD not requiring continuous oxygen therapy"},
+      {"id": "RSP-E4", "text": "Asthma"},
+      {"id": "RSP-E5", "text": "Patients with O2 baseline of 94% or greater with physician explanation"},
+      {"id": "RSP-E6", "text": "Patients with mature tracheostomy who are able to independently care for their tracheostomy site and are also able to eat and use a speaking valve"},
+      {"id": "RSP-E7", "text": "CPAP"}
+    ], "ineligible": [
+      {"id": "RSP-X1", "text": "Pneumothorax"},
+      {"id": "RSP-X2", "text": "Hemothorax"},
+      {"id": "RSP-X3", "text": "Trach patients with ventilator"},
+      {"id": "RSP-X4", "text": "Pulmonary Embolism"},
+      {"id": "RSP-X5", "text": "Respiratory conditions requiring BiPAP"}
+    ]},
+    {"system": "Musculoskeletal", "eligible": [
+      {"id": "MSK-E1", "text": "Closed fractures"},
+      {"id": "MSK-E2", "text": "PT to be coordinated and scheduled prior to arrival at recuperative care", "kind": "conditional"},
+      {"id": "MSK-E3", "text": "Rheumatoid arthritis"},
+      {"id": "MSK-E4", "text": "Non-elective hip/knee replacements following SNF placement, if patient meets the other recuperative care guidelines"}
+    ], "ineligible": [
+      {"id": "MSK-X1", "text": "Open fractures"},
+      {"id": "MSK-X2", "text": "Osteomyelitis"},
+      {"id": "MSK-X3", "text": "External fixation devices"},
+      {"id": "MSK-X4", "text": "Immediately following hospitalization for amputation with wounds"},
+      {"id": "MSK-X5", "text": "Facial trauma with mandibular or maxillary fracture requiring jaw wiring"}
+    ]},
+    {"system": "GI", "eligible": [
+      {"id": "GI-E1", "text": "Post abdominal surgical care"},
+      {"id": "GI-E2", "text": "Uncomplicated inguinal or umbilical hernia"},
+      {"id": "GI-E3", "text": "Diverticulitis"},
+      {"id": "GI-E4", "text": "Uncomplicated inflammatory bowel disease"},
+      {"id": "GI-E5", "text": "Ascites, if chronic"},
+      {"id": "GI-E6", "text": "Gastroesophageal reflux disorder"},
+      {"id": "GI-E7", "text": "Post hospitalization for uncomplicated bowel obstruction that did not require surgical intervention"}
+    ], "ineligible": [
+      {"id": "GI-X1", "text": "Decompensated cirrhosis (defined by the development of clinically evident complications of portal hypertension, ascites, variceal hemorrhage, hepatic encephalopathy or liver insufficiency, jaundice)"},
+      {"id": "GI-X2", "text": "Immediately following hospitalization for bleeding ulcer disease or esophageal varices"},
+      {"id": "GI-X3", "text": "C.Diff"}
+    ]},
+    {"system": "Endocrine", "eligible": [
+      {"id": "END-E1", "text": "Diabetes that shows improvement and stabilization in glucose levels as seen on at least 5 consecutive glucose readings with medical treatment (see the diabetes rules)"},
+      {"id": "END-E2", "text": "Hypothyroidism or hyperthyroidism on medical treatment"},
+      {"id": "END-E3", "text": "s/p thyroidectomy"}
+    ], "ineligible": [
+      {"id": "END-X1", "text": "Immediately s/p parathyroidectomy"},
+      {"id": "END-X2", "text": "Alcoholic ketoacidosis"},
+      {"id": "END-X3", "text": "DKA"}
+    ]},
+    {"system": "GU", "eligible": [
+      {"id": "GU-E1", "text": "Urinary tract infection"},
+      {"id": "GU-E2", "text": "Post-acute glomerulonephritis, if caused by an infection"},
+      {"id": "GU-E3", "text": "Post-op laparoscopic gynecologic surgery for treatment of non-cancerous conditions"},
+      {"id": "GU-E4", "text": "Urolithiasis"},
+      {"id": "GU-E5", "text": "Patients requiring catheterization if confirmation is provided that patient is able to self-catheterize", "kind": "conditional"},
+      {"id": "GU-E6", "text": "Indwelling catheter if patient is able to empty on their own and follow up has been scheduled for removal", "kind": "conditional"},
+      {"id": "GU-E7", "text": "Patients requiring dialysis if dialysis schedule and frequency has been established", "kind": "conditional"}
+    ], "ineligible": [
+      {"id": "GU-X1", "text": "Patients requiring intermittent catheterization that has to be performed by medical staff"}
+    ]},
+    {"system": "Circulatory System", "eligible": [
+      {"id": "CIR-E1", "text": "Post-op angiogram"},
+      {"id": "CIR-E2", "text": "Cardiac catheterization/stent placement"},
+      {"id": "CIR-E3", "text": "Pacemaker/ICD insertion"},
+      {"id": "CIR-E4", "text": "Stable hypertension (patient with baseline elevated BP; SBP<170, DBP<100, asymptomatic and not currently taking medication but with established follow up with a primary care provider)"},
+      {"id": "CIR-E5", "text": "Post coronary artery bypass graft or heart valve surgery with controlled, stable blood pressure, normal hemoglobin/hematocrit, normal EF and without arrhythmias. Home health must be ordered and scheduled prior to admission to recuperative care. Cardiac surgery follow up must be scheduled prior to admission to recuperative care.", "kind": "conditional"},
+      {"id": "CIR-E6", "text": "Hypertension that responds well to oral anti-hypertensive regimen"},
+      {"id": "CIR-E7", "text": "History of heart attack. If being admitted to recuperative care immediately following admission for heart attack, will only accept patients who have an normal ejection fraction"}
+    ], "ineligible": [
+      {"id": "CIR-X1", "text": "Unstable cardiac arrhythmias"},
+      {"id": "CIR-X2", "text": "Hypertension that requires IV medications to improve, is symptomatic or is not responding to oral medication"}
+    ]},
+    {"system": "Neurology", "eligible": [
+      {"id": "NEU-E1", "text": "Alcohol withdrawal seizure, following detox/stabilization"},
+      {"id": "NEU-E2", "text": "Post carpal tunnel or cubital release"},
+      {"id": "NEU-E3", "text": "Mild traumatic brain injury with intact ADLs"},
+      {"id": "NEU-E4", "text": "Cervical or lumbar radiculopathy following epidural injection or decompression surgery"}
+    ], "ineligible": [
+      {"id": "NEU-X1", "text": "Stroke syndrome with neurological residual/deficit (e.g. ambulatory difficulty, seizure)"},
+      {"id": "NEU-X2", "text": "New onset of seizure with neurological deficit/impairment"},
+      {"id": "NEU-X3", "text": "Moderate or severe traumatic brain injury"},
+      {"id": "NEU-X4", "text": "Cervical or lumbar fusion"},
+      {"id": "NEU-X5", "text": "Dementia"},
+      {"id": "NEU-X6", "text": "Immediately s/p neurosurgery. Neurosurgical patients who meet other eligibility criteria should be escalated to further clinical review", "human_review": true}
+    ]}
+  ],
+  "referral_checklist": {
+    "source": "IHH Recuperative Care Referral Form (form RC0725-SH)",
+    "items": [
+      {"id": "DOC-1", "text": "Illumination Health + Home Referral Form"},
+      {"id": "DOC-2", "text": "Client's Demographic Page"},
+      {"id": "DOC-3", "text": "CalOptima Form/LOA/AUTH"},
+      {"id": "DOC-4", "text": "H&P (History and Physical)"},
+      {"id": "DOC-5", "text": "Current Progress Notes (if needed)"},
+      {"id": "DOC-6", "text": "Updated Vitals (last 24 hours)"},
+      {"id": "DOC-7", "text": "Medication List"},
+      {"id": "DOC-8", "text": "PT/OT or Nursing Notes"},
+      {"id": "DOC-9", "text": "Blood or Wound Culture (if needed)"},
+      {"id": "DOC-10", "text": "30-day supply of all medications"}
+    ]
+  },
+  "referral_form_screen": {
+    "source": "IHH Recuperative Care Referral Form (form RC0725-SH), front page",
+    "must_meet_all": [
+      {"id": "FORM-M1", "text": "Currently unhoused, at risk of being unhoused, or are living in an inadequate environment post hospitalization"},
+      {"id": "FORM-M2", "text": "Medically and psychiatrically stable condition upon discharge"},
+      {"id": "FORM-M3", "text": "The patient is AAOx4 (alert and oriented)"},
+      {"id": "FORM-M4", "text": "Able to manage ADL (activities of daily living)"},
+      {"id": "FORM-M5", "text": "Able to self-administer medications and manage their medication schedule with staff oversight"},
+      {"id": "FORM-M6", "text": "Capable of walking 100 ft. with or without DME and able to transfer independently", "superseded_by": "MOB-3, MOB-4"}
+    ],
+    "not_eligible_if": [
+      {"id": "FORM-X1", "text": "Cognitively impaired (i.e., dementia, Alzheimer's)"},
+      {"id": "FORM-X2", "text": "Unable to perform activities of daily living"},
+      {"id": "FORM-X3", "text": "Unable to transfer, ambulate 100 ft., or use DME independently", "superseded_by": "MOB-3, MOB-4"},
+      {"id": "FORM-X4", "text": "Active infection has not been cleared by a doctor or CID: MRSA, Tuberculosis, C-DIFF"},
+      {"id": "FORM-X5", "text": "Non-compliance with detox treatment or a refusal to abstain from substance abuse"},
+      {"id": "FORM-X6", "text": "Registered sex offender", "superseded_by": "OTH-2"},
+      {"id": "FORM-X7", "text": "Aggressive or combative behavior directed at staff or other patients"}
+    ],
+    "service_promise": "A decision regarding approval or denial will be communicated to the referring party within two hours of receiving the referral. If denied, a brief explanation will be provided."
+  }
+}
