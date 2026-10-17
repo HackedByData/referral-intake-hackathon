@@ -3,7 +3,7 @@ import re
 from app.llm import LLMError
 from app.rules.criteria import load_criteria
 from app.rules.evaluate import evaluate_group, evaluate_packet, superseded_results
-from app.schemas import CaseSummary, RuleGroupOutput, RuleResult
+from app.schemas import CaseSummaryExtract, RuleGroupOutput, RuleResult
 from tests.factories import make_packet, make_rule, make_summary
 from tests.fakes import FakeLLM
 
@@ -15,7 +15,7 @@ def ids_in(content) -> list[str]:
 
 
 def happy(output, system, content):
-    if output is CaseSummary:
+    if output is CaseSummaryExtract:
         return make_summary()
     return RuleGroupOutput(results=[RuleResult(rule_id=i, status="pass", reasoning="ok", confidence="high")
                                     for i in ids_in(content)])
@@ -36,7 +36,7 @@ async def test_evaluate_packet_covers_every_rule_once():
 async def test_summary_runs_first_and_packet_block_is_cached():
     llm = FakeLLM(happy)
     await evaluate_packet(llm, make_packet(), load_criteria())
-    assert llm.calls[0]["output"] is CaseSummary
+    assert llm.calls[0]["output"] is CaseSummaryExtract
     first_block = llm.calls[0]["content"][0]
     assert first_block["cache_control"] == {"type": "ephemeral"}
     assert all(c["content"][0]["text"] == first_block["text"] for c in llm.calls)  # identical cached prefix

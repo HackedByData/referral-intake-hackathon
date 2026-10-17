@@ -93,14 +93,18 @@ class Conflict(BaseModel):
     why_it_matters: str
 
 
-class BedNeeds(BaseModel):
+class BedNeedsExtract(BaseModel):
+    """Model-facing: what Claude fills in. Keep system-filled fields out (the API caps schema complexity)."""
     sex: Sex
     wheelchair: bool | None = Field(default=None, description="True only if wheelchair dependent")
     mobility_aid: str | None = None
     oxygen: bool | None = None
     isolation: bool | None = None
     notes: str | None = None
-    county: str | None = Field(default=None, description="Always null: the system fills this after county review")
+
+
+class BedNeeds(BedNeedsExtract):
+    county: str | None = None  # system-filled after county review
 
 
 class CountySuggestion(BaseModel):
@@ -117,7 +121,8 @@ class DocumentPresence(BaseModel):
     pages: list[int]
 
 
-class CaseSummary(BaseModel):
+class CaseSummaryExtract(BaseModel):
+    """Model-facing output of the case-summary call. CaseSummary adds the system-filled fields."""
     one_liner: str = Field(description="One sentence, no names or identifiers")
     age: str | None = None
     sex: Sex
@@ -127,11 +132,15 @@ class CaseSummary(BaseModel):
     documents_present: list[DocumentPresence] = []
     key_findings: list[str] = []
     conflicts: list[Conflict] = []
-    bed_needs: BedNeeds
+    bed_needs: BedNeedsExtract
     health_plan: str | None = Field(default=None, description="Health plan / payer named in the packet (e.g. 'CalOptima'), exactly as written; null if none")
     health_plan_evidence: list[Evidence] = Field(default=[], description="Verbatim quotes showing the health plan")
     location_clues: list[Evidence] = Field(default=[], description="Verbatim quotes naming a city or county where the patient lives or is hospitalized (not [REDACTED] text)")
-    suggested_county: CountySuggestion | None = Field(default=None, description="Always null: filled by the system")
+
+
+class CaseSummary(CaseSummaryExtract):
+    bed_needs: BedNeeds
+    suggested_county: CountySuggestion | None = None  # system-filled
 
 
 # ---------- Decision tree ----------

@@ -6,7 +6,7 @@ import time
 from app.llm import LLMError
 from app.rules.criteria import Criteria
 from app.rules.prompts import EVAL_SYSTEM, KNOWN_GAPS, RULES_TASK, SUMMARY_TASK
-from app.schemas import CaseSummary, PacketText, Rule, RuleGroupOutput, RuleResult
+from app.schemas import CaseSummary, CaseSummaryExtract, PacketText, Rule, RuleGroupOutput, RuleResult
 
 log = logging.getLogger(__name__)
 SPLIT_THRESHOLD = 6
@@ -27,7 +27,9 @@ def _rule_lines(rules: list[Rule]) -> str:
 async def summarize(llm, packet: PacketText, criteria: Criteria) -> CaseSummary:
     checklist = _rule_lines(criteria.checklist())
     content = [packet_block(packet, criteria), {"type": "text", "text": SUMMARY_TASK.format(checklist=checklist)}]
-    return await llm.parse(system=EVAL_SYSTEM, content=content, output=CaseSummary, effort="high", max_tokens=16000)
+    extract = await llm.parse(system=EVAL_SYSTEM, content=content, output=CaseSummaryExtract, effort="high",
+                              max_tokens=16000)
+    return CaseSummary.model_validate(extract.model_dump())
 
 
 def _ensure_coverage(rules: list[Rule], results: list[RuleResult]) -> list[RuleResult]:
