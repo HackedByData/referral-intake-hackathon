@@ -7,7 +7,7 @@ import app.knowledge.models  # noqa: F401
 import app.workflow.models  # noqa: F401
 from app.db import make_engine, set_engine
 from app.rules.criteria import load_criteria
-from app.schemas import CaseSummary, RuleGroupOutput, RuleResult
+from app.schemas import CaseSummary, RuleGroupOutput, RuleResult, CaseSummaryExtract
 from eval import run as eval_run
 from tests.factories import make_packet, make_summary
 from tests.fakes import FakeLLM
@@ -15,7 +15,7 @@ from tests.kn_helpers import approved
 
 
 def handler(output, system, content):
-    if output is CaseSummary:
+    if output is CaseSummaryExtract:
         return make_summary()
     ids = re.findall(r"^- (\S+) \[", content[-1]["text"], re.M)
     return RuleGroupOutput(results=[RuleResult(rule_id=i, status="pass", reasoning="ok", confidence="high")
