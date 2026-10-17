@@ -359,5 +359,18 @@ interface AuditEventView {
 - Show `verified: false` evidence and `conflict` reasons prominently. They are where the AI is most likely wrong.
 - Drafts and the Kipu payload are not sent anywhere. Say "Draft" / "Mock" in the UI.
 
+## 7. Behaviour notes for the UI (v1.1)
+
+- Fields typed `x?: T` are **present with `null`** when unknown; they are not omitted. Treat `null` and missing the same.
+- **Disable Approve/Deny/Request info while a decision request is in flight.** Double-clicks are only partly guarded on the server.
+- `POST /api/referrals/{id}/decision` may return `500` with `detail: "Approval failed and was rolled back: ..."`. The bed is held again, so the coordinator can retry.
+- `GET /api/referrals/{id}/pages/{page}` and `GET /api/referrals/{id}/bed-matches` return `409` until analysis finishes.
+- `GET /api/referrals/{id}/pages/{page}/image` returns `404` for an out-of-range page or a missing upload.
+- `POST /api/beds` returns `409` if the bed id already exists.
+- `PATCH /api/beds/{id}` returns `409` when changing the status of a bed with an active assignment. Discharge it first.
+- `POST /api/beds/import` never fails the whole file for a bad row. Each problem row appears in `errors[]` as `"row N: ..."`. Show them.
+- A passing finding whose quote couldn't be matched to the packet shows up as a `review_reasons[]` item of kind `unverified_evidence` and makes the decision `needs_review`. That's intentional (guardrail).
+
 ## Changelog
 - v1 (2026-10-17): initial contract.
+- v1.1 (2026-10-17): behaviour notes (§7) from code review: nulls, button disabling, 409/404/500 cases, per-row import errors, unverified-evidence reviews. No field or route changes.
