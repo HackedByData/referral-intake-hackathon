@@ -1,4 +1,5 @@
 """Referral intake HTTP routes."""
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -9,6 +10,7 @@ from app.beds import service as beds
 from app.config import get_settings
 from app.db import get_session
 from app.ingest.ocr import CORRECTION
+from app.knowledge import capture
 from app.ingest.render import InvalidPDF, page_count, render_page, validate_pdf
 from app.rules.criteria import load_criteria
 from app.rules.tree import decide as decide_tree
@@ -21,6 +23,7 @@ from app.workflow.decisions import DecisionError, apply_decision, get_kipu
 from app.workflow.models import Referral
 from app.workflow.pipeline import Pipeline, get_pipeline
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/referrals", tags=["referrals"])
 
 
@@ -190,6 +193,11 @@ def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Dep
     session.commit()
     audit.record(session, "county_confirmed", actor=body.coordinator, referral_id=referral_id, county=county,
                  held_bed=rec.held_bed.bed_id if rec.held_bed else None)
+    try:  # propose a county_mapping lesson when the coordinator disagrees with the AI's suggestion
+        capture.from_county(session, referral_id, result, old, county, body.coordinator, load_criteria())
+    except Exception:
+        log.exception("County lesson capture failed for %s", referral_id)
+        session.rollback()
     session.refresh(ref)
     return _view(ref)
 
