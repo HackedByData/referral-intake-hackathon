@@ -93,3 +93,16 @@ def test_mark_interrupted(engine):
         assert mark_interrupted(s) == 1
         ref = s.get(Referral, "R1")
         assert ref.status == "failed" and "interrupted" in ref.error
+
+
+async def test_hold_failure_clears_held_bed_and_adds_no_bed_reason(engine, monkeypatch):
+    from app.beds import service
+
+    def refuse(*a, **k):
+        raise service.BedUnavailable("taken")
+    monkeypatch.setattr(service, "hold", refuse)
+    await pipeline(engine).run("R1")
+    with Session(engine) as s:
+        rec = AnalysisResult.model_validate_json(s.get(Referral, "R1").result_json).recommendation
+        assert rec.held_bed is None
+        assert any(r.kind == "no_bed" for r in rec.review_reasons)

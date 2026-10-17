@@ -17,7 +17,7 @@ from app.rules.evaluate import evaluate_packet
 from app.rules.prompts import PROMPT_VERSION
 from app.rules.tree import decide
 from app.rules.verify import verify_results, verify_summary
-from app.schemas import AnalysisResult
+from app.schemas import AnalysisResult, ReviewReason
 from app.workflow import audit
 from app.workflow.models import Referral
 
@@ -70,8 +70,11 @@ class Pipeline:
                 if rec.held_bed:
                     try:
                         beds.hold(s, rec.held_bed.bed_id, referral_id, self.settings.hold_ttl_hours)
-                    except beds.BedUnavailable:
+                    except (beds.BedUnavailable, beds.BedNotFound):
                         log.warning("Bed %s taken between match and hold", rec.held_bed.bed_id)
+                        rec = rec.model_copy(update={"held_bed": None, "review_reasons": rec.review_reasons + [
+                            ReviewReason(kind="no_bed", rule_ids=[],
+                                         detail="Matched bed was taken before it could be held.")]})
                 result = AnalysisResult(
                     prompt_version=PROMPT_VERSION, model=getattr(self.llm, "model", "unknown"), packet=packet,
                     summary=summary, rule_results=results, recommendation=rec,

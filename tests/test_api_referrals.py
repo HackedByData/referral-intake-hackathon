@@ -114,3 +114,22 @@ def test_upload_without_key_is_503(client, monkeypatch):
 def test_retry_only_when_failed(client):
     rid = upload(client).json()["id"]
     assert client.post(f"/api/referrals/{rid}/retry").status_code == 409
+
+
+def test_page_image_out_of_range_is_404(client):
+    rid = upload(client).json()["id"]
+    assert client.get(f"/api/referrals/{rid}/pages/0/image").status_code == 404
+    assert client.get(f"/api/referrals/{rid}/pages/99/image").status_code == 404
+
+
+def test_page_image_without_result_checks_pdf_page_count(client):
+    from sqlmodel import Session as S
+    from app.db import get_engine
+    rid = upload(client).json()["id"]
+    with S(get_engine()) as s:
+        ref = s.get(Referral, rid)
+        ref.result_json = None
+        s.add(ref)
+        s.commit()
+    assert client.get(f"/api/referrals/{rid}/pages/99/image").status_code == 404
+    assert client.get(f"/api/referrals/{rid}/pages/1/image").status_code == 200

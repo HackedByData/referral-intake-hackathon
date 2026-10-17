@@ -9,7 +9,7 @@ from app.beds import service as beds
 from app.config import get_settings
 from app.db import get_session
 from app.ingest.ocr import CORRECTION
-from app.ingest.render import InvalidPDF, render_page, validate_pdf
+from app.ingest.render import InvalidPDF, page_count, render_page, validate_pdf
 from app.rules.criteria import load_criteria
 from app.schemas import (
     AnalysisResult, BedOption, CoordinatorDecision, CoordinatorDecisionRecord, Drafts, PageInfo, PageMarkdown,
@@ -122,13 +122,18 @@ def get_page(referral_id: str, page: int, session: Session = Depends(get_session
 @router.get("/{referral_id}/pages/{page}/image")
 def get_page_image(referral_id: str, page: int, session: Session = Depends(get_session)):
     ref = _get(session, referral_id)
+    pdf = get_settings().uploads_dir / f"{ref.id}.pdf"
+    if page < 1 or not pdf.exists():
+        raise HTTPException(404, f"Page {page} not found")
     rotate = 0
     if ref.result_json:
         pages = {p.page: p for p in AnalysisResult.model_validate_json(ref.result_json).packet.pages}
         if page not in pages:
             raise HTTPException(404, f"Page {page} not found")
         rotate = CORRECTION.get(pages[page].orientation, 0)
-    data, media = render_page(get_settings().uploads_dir / f"{ref.id}.pdf", page, rotate=rotate)
+    elif page > page_count(pdf):
+        raise HTTPException(404, f"Page {page} not found")
+    data, media = render_page(pdf, page, rotate=rotate)
     return Response(content=data, media_type=media)
 
 

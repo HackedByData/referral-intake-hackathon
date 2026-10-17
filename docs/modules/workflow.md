@@ -7,7 +7,7 @@ marked failed ("interrupted").
 **Pipeline** (`pipeline.py`, FastAPI BackgroundTask): transcribe → evaluate → verify → decide → hold the top bed
 (4 h TTL). The full `AnalysisResult` is stored as JSON on the referral row.
 
-**Decisions** (`decisions.py`): approve assigns the held bed (or `bed_id`) inside one transaction and writes the mock
+**Decisions** (`decisions.py`): approve assigns the held bed (or `bed_id`), then compensates on failure (discharges the bed, re-holds it, returns 500, referral stays reviewable), and writes the mock
 Kipu payload to `data/outbox/kipu/{id}.json`; deny releases the hold and drafts a denial; request_info keeps the hold
 and drafts the hospital questions. Every decision is audited with `ai_recommendation` and `agreed_with_ai`.
 Double submits → 409.
