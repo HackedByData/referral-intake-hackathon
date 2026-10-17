@@ -151,7 +151,7 @@ def _with_text(rule, text):
 
 
 def test_unconditional_must_not_applicable_needs_review():
-    rules = RULES + [make_rule("ADL-1", "must")]
+    rules = RULES + [make_rule("ADL-1", "must", section="ADLs")]
     rs = results() + [make_result("ADL-1", "not_applicable")]
     rec = decide(rules, rs, make_summary(), BEDS)
     assert rec.decision == "needs_review"
@@ -181,3 +181,32 @@ def test_deny_headline_grammar():
     assert rec.headline == "Recommend deny: 1 criterion not met"
     rec2 = decide(RULES, results(MH_2="fail", MOB_3="fail"), make_summary(), BEDS)
     assert rec2.headline == "Recommend deny: 2 criteria not met"
+
+
+def test_must_in_other_section_not_applicable_still_approves():
+    rules = RULES + [make_rule("DM-5", "must", section="Diabetes").model_copy(
+        update={"text": "Patient should understand insulin use"})]
+    rs = results() + [make_result("DM-5", "not_applicable")]
+    assert decide(rules, rs, make_summary(), BEDS).decision == "approve"
+
+
+def test_mob3_na_with_verified_mob4_pass_still_approves():
+    rules = RULES + [make_rule("MOB-4", "must")]
+    rs = results(MOB_3="not_applicable") + [make_result("MOB-4", "pass")]
+    rec = decide(rules, rs, make_summary(), BEDS)
+    assert rec.decision == "approve"
+
+
+def test_real_criteria_silent_na_set():
+    from app.rules.criteria import load_criteria
+    crit = load_criteria()
+    rs = []
+    for r in crit.rules:
+        if r.id in ("GEN-1", "MOB-4"):
+            rs.append(make_result(r.id, "pass"))
+        else:
+            rs.append(make_result(r.id, "not_applicable"))
+    rec = decide(crit.rules, rs, make_summary(), BEDS)
+    flagged = {i for rr in rec.review_reasons if "always applies" in rr.detail for i in rr.rule_ids}
+    assert flagged == {"ADL-1", "ADL-2", "ADL-3", "MH-1", "COG-1", "COG-2",
+                       "FORM-M1", "FORM-M2", "FORM-M3", "FORM-M4", "FORM-M5"}

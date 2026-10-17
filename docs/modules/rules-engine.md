@@ -19,7 +19,7 @@
 
 **Number guard:** fuzzy matches extract numbers with a regex (so `98%` and `150ft` are checked) and require each to appear on the page; negation tokens are compared with trailing periods stripped.
 
-**Silent not_applicable:** a `must` rule whose text does not start with "If" that comes back `not_applicable` without verified evidence adds an `unverified_evidence` review reason (GEN-*, human-review and superseded rules exempt); MOB-3 and MOB-4 both `not_applicable` also forces review.
+**Silent not_applicable:** a `must` rule in sections ADLs / Mental Health / Cognition / "Referral form: must meet all" whose text does not start with "If" that comes back `not_applicable` without verified evidence adds an `unverified_evidence` review reason (GEN-*, human-review and superseded rules exempt); MOB-3 and MOB-4 both `not_applicable` also forces review.
 
 **Status semantics:** always from the eligibility point of view (see `app/schemas.py` and `RULES_TASK`).
 

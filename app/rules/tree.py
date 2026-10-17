@@ -4,6 +4,7 @@ from app.schemas import (
 )
 
 GEN_IDS = ("GEN-1", "GEN-2", "GEN-3")
+ALWAYS_APPLIES_SECTIONS = {"ADLs", "Mental Health", "Cognition", "Referral form: must meet all"}
 APPROVE_HIGHLIGHTS = ("GEN-1", "GEN-2", "GEN-3", "MOB-3", "MOB-4", "ADL-1", "COG-1", "COG-2")
 
 
@@ -102,6 +103,7 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     # ...and an unconditional 'must' rule can't silently be "not applicable" without evidence.
     silent_na = [r for r in res.values() if kind[r.rule_id] == "must" and r.rule_id not in human
                  and r.rule_id not in GEN_IDS and meta[r.rule_id].superseded_by is None
+                 and meta[r.rule_id].section in ALWAYS_APPLIES_SECTIONS
                  and r.status == "not_applicable" and not _verified(r)
                  and not meta[r.rule_id].text.strip().lower().startswith("if")]
     mob_both_na = all(i in res and res[i].status == "not_applicable" for i in ("MOB-3", "MOB-4"))
