@@ -10,6 +10,7 @@ from sqlmodel import Session
 
 from app.api import audit as audit_api
 from app.api import beds as beds_api
+from app.api import criteria as criteria_api
 from app.api import referrals as referrals_api
 from app.beds.seed import seed_demo_beds, seed_poc_beds
 from app.config import get_settings
@@ -37,6 +38,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 app.include_router(referrals_api.router)
 app.include_router(beds_api.router)
 app.include_router(audit_api.router)
+app.include_router(criteria_api.router)
 
 
 @app.get("/api/health")

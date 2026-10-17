@@ -40,6 +40,13 @@ class Rule(BaseModel):
     superseded_by: str | None = None
 
 
+class CriteriaView(BaseModel):
+    """GET /api/criteria: every rule, flattened, plus how conflicts between sources are settled."""
+    precedence: str
+    kinds: dict[str, str]
+    rules: list[Rule]
+
+
 # ---------- Ingest ----------
 class PageMarkdown(BaseModel):
     page: int = Field(description="1-indexed page number in the PDF")

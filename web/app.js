@@ -52,12 +52,13 @@ const fresh = () => ({
   confirmed: { bed: false, why: false, patient: false },
   editing: { bed: false, why: false, patient: false },
   snapshot: {},
-  chosenBed: null, overrides: {}, patientEdits: {}, ruleFilter: "attention", notes: "",
+  chosenBed: null, overrides: {}, patientEdits: {}, critFilter: "all", notes: "",
   deciding: false, decideError: null, countyDraft: "", countyBusy: false, countyError: null,
 });
 const S = {
   tab: "upload", list: null, listError: null, file: null, uploading: false, uploadError: null, pollTimer: null,
   r: fresh(),
+  criteria: null,
   beds: { list: null, facilities: null, summary: null, site: "", status: "", error: null },
 };
 
@@ -554,7 +555,7 @@ function renderWhyPanel() {
       h("tbody", {}, r.hospital_questions.map((q) => h("tr", {}, h("td", { class: "rule-id" }, q.rule_id), h("td", {}, q.question))))))) : null;
 
   return panel("why", "2", "Why this recommendation",
-    editing ? "Open “Show all rules” and change any rule the AI got wrong. Give a short reason for each change." : "What the AI found, and what still needs a person.",
+    editing ? "Change the result of any criterion the AI got wrong. Give a short reason for each change." : "What the AI found, what still needs a person, and every IHH admission criterion with the reason for its result.",
     [
       unverified.length ? h("div", { class: "notice notice-warn" }, h("p", {}, h("strong", {}, "Check these quotes. "),
         "The AI quoted the packet, but the quote could not be found on that page: ", unverified.flatMap((x) => x.rule_ids).join(", "), ".")) : null,
@@ -587,69 +588,169 @@ function evidenceLine(e) {
       e.verified ? null : h("div", { class: "why-disabled" }, "Not found on this page. Open the page and check.")));
 }
 
-const FILTERS = [
-  ["attention", "Needs attention", (r) => ["fail", "unknown", "needs_human"].includes(r.status) || r.evidence.some((e) => !e.verified)],
-  ["fail", "Blocks admission", (r) => r.status === "fail"],
-  ["unknown", "Not in packet", (r) => r.status === "unknown"],
-  ["pass", "Meets", (r) => r.status === "pass"],
-  ["all", "All rules", () => true],
+// ----- Admission criteria checklist -----
+// Every IHH criterion (GET /api/criteria), grouped the way IHH's outline reads, with the AI's result and its reason.
+// Groups are matched in this order (first match wins) and shown in DISPLAY_ORDER.
+const CRITERIA_GROUPS = [
+  { key: "general", title: "General admission criteria", intro: "The patient must meet at least one of these.",
+    match: (r) => r.section.startsWith("General admission") },
+  { key: "form", title: "Referral form screen", intro: "The checks printed on IHH's referral form.", match: (r) => r.source === "form" },
+  { key: "systems", title: "Conditions IHH accepts, by body system", intro: "Shows which accepted conditions match this patient. Most do not apply to any one patient.",
+    match: (r) => r.source === "by_system" && r.section.endsWith("(eligible)") },
+  { key: "exclude", title: "Exclusions", intro: "If any one of these is present, the patient is not eligible.", match: (r) => r.kind === "exclude" },
+  { key: "must", title: "Requirements", intro: "The patient must meet every requirement that applies to them.", match: (r) => r.kind === "must" },
+  { key: "conditional", title: "Allowed only with arrangements", intro: "Acceptable only if the arrangement is confirmed before admission.", match: (r) => r.kind === "conditional" },
+  { key: "document", title: "Documents the hospital must send", intro: "Blacked-out (redacted) details do not make a document missing.", match: (r) => r.kind === "document" },
+  { key: "ask", title: "Questions IHH asks, and notes", intro: "These are not pass or fail on their own.", match: () => true },
 ];
+const DISPLAY_ORDER = ["general", "must", "exclude", "conditional", "document", "systems", "ask", "form"];
+
+// Status is always from the eligibility point of view; say it in words that fit the kind of criterion.
+const RESULT_WORDS = {
+  must: { pass: ["Met", "b-ok"], fail: ["Not met", "b-bad"] },
+  exclude: { pass: ["Not present", "b-ok"], fail: ["Present", "b-bad"] },
+  document: { pass: ["In the packet", "b-ok"], fail: ["Missing", "b-bad"] },
+  conditional: { pass: ["Arranged or not needed", "b-ok"], fail: ["Cannot be arranged", "b-bad"], unknown: ["Not confirmed yet", "b-warn"] },
+  eligible: { pass: ["Matches this patient", "b-ok"], fail: ["Does not match", "b-off"] },
+  ask: { not_applicable: ["Answered", "b-info"] },
+  note: { not_applicable: ["For your information", "b-info"] },
+};
+function resultWords(kind, status) {
+  const k = RESULT_WORDS[kind] || {};
+  if (k[status]) return k[status];
+  if (status === "unknown") return ["Can't tell from the packet", "b-warn"];
+  if (status === "needs_human") return ["Needs your judgment", "b-held"];
+  if (status === "not_applicable") return ["Does not apply", "b-off"];
+  return RULE_STATUS[status] || [String(status), "b-off"];
+}
+
+function criteriaRules() {
+  if (S.criteria) return S.criteria.rules;
+  // Fallback when /api/criteria is unreachable: the evaluated rules carry their own text.
+  return S.r.details.rule_results.map((x) => ({ id: x.rule_id, text: x.text, kind: x.kind, section: x.section, source: x.source, superseded_by: x.superseded_by }));
+}
+
+function criteriaRows() {
+  const results = Object.fromEntries(S.r.details.rule_results.map((x) => [x.rule_id, x]));
+  return criteriaRules().map((rule) => {
+    const res = results[rule.id] || null;
+    const ov = S.r.overrides[rule.id];
+    const status = ov ? ov.status : res ? res.status : null;
+    const attention = !rule.superseded_by && (!res || !!ov || ["fail", "unknown", "needs_human"].includes(status)
+      || res.evidence.some((e) => !e.verified));
+    return { rule, res, ov, status, attention, group: CRITERIA_GROUPS.find((g) => g.match(rule)).key };
+  });
+}
+
+function groupVerdict(key, rows) {
+  const live = rows.filter((x) => !x.rule.superseded_by);
+  const n = (st) => live.filter((x) => x.status === st).length;
+  const open = n("unknown") + n("needs_human") + live.filter((x) => !x.res).length;
+  if (key === "general") {
+    const met = live.filter((x) => x.status === "pass").map((x) => x.rule.id);
+    if (met.length) return [`Met (${met.join(", ")})`, "b-ok"];
+    return open ? ["Can't tell yet", "b-warn"] : ["None met", "b-bad"];
+  }
+  const unverified = live.filter((x) => x.res && x.res.evidence.some((e) => !e.verified)).length;
+  if (key === "systems") {
+    const match = n("pass") ? `${n("pass")} match this patient` : "None match";
+    return open ? [`${match}, ${open} to check`, "b-warn"] : [match, n("pass") ? "b-ok" : "b-off"];
+  }
+  if (key === "ask") return [`${live.length} item(s)`, "b-info"];
+  if (n("fail")) return [`${n("fail")} ${{ exclude: "present", document: "missing" }[key] || "not met"}`, "b-bad"];
+  if (open) return [`${open} to check`, "b-warn"];
+  if (unverified) return [`${unverified} quote(s) to check`, "b-warn"];
+  return [{ exclude: "None present", document: "All in the packet", conditional: "All arranged or not needed" }[key] || "All met", "b-ok"];
+}
 
 function renderReasoning(editing) {
-  const d = S.r.details;
   const r = rec();
-  const [, , test] = FILTERS.find((f) => f[0] === S.r.ruleFilter);
-  const rules = d.rule_results.filter((x) => test(x) || S.r.overrides[x.rule_id]);
-  const bySection = {};
-  for (const x of rules) (bySection[x.section] = bySection[x.section] || []).push(x);
-
   const tree = h("ol", { class: "tree" }, r.tree.map((t) => h("li", { class: t.outcome },
     h("span", { class: "dot", "aria-hidden": "true" }, t.outcome === "triggered" ? "!" : "✓"),
     h("div", {}, h("strong", {}, TREE_NODE[t.node] || t.node), " ",
       badge(t.outcome === "triggered" ? "Found something" : "Clear", t.outcome === "triggered" ? "b-warn" : "b-ok"),
       h("p", { style: "margin:4px 0 0" }, t.explanation, " ", t.rule_ids.map((x) => h("span", { class: "rule-id" }, x + " ")))))));
 
-  return h("details", { class: "reasoning", open: editing || S.r.reasoningOpen, ontoggle: (e) => (S.r.reasoningOpen = e.target.open) },
-    h("summary", {}, "Show all rules and the AI's reasoning"),
-    h("h3", { class: "section-title" }, "How the AI decided, step by step"),
-    tree,
-    h("h3", { class: "section-title" }, "Rules"),
-    h("div", { class: "filters", role: "group", "aria-label": "Filter rules" }, FILTERS.map(([k, label, fn]) =>
-      h("button", { class: "chip", "aria-pressed": String(S.r.ruleFilter === k), onclick: () => { S.r.ruleFilter = k; S.r.reasoningOpen = true; render(); } },
-        `${label} (${d.rule_results.filter(fn).length})`))),
-    rules.length ? Object.entries(bySection).map(([section, list]) => [h("h3", { class: "section-title" }, section), list.map((x) => ruleRow(x, editing))])
-      : h("p", { class: "muted" }, "No rules in this group."));
+  return h("details", { class: "reasoning", open: S.r.reasoningOpen !== false || editing, ontoggle: (e) => (S.r.reasoningOpen = e.target.open) },
+    h("summary", {}, "Admission criteria and the AI's reasoning"),
+    renderCriteria(editing),
+    h("details", { class: "crit-group" }, h("summary", {}, "How the AI reached its recommendation, step by step"),
+      h("div", { class: "crit-group-body" }, tree)));
 }
 
-function ruleRow(x, editing) {
-  const ov = S.r.overrides[x.rule_id];
-  const [label, cls] = RULE_STATUS[x.status];
+function renderCriteria(editing) {
+  const all = criteriaRows();
+  const filter = S.r.critFilter || "all";
+  const nAttention = all.filter((x) => x.attention).length;
+  const chips = h("div", { class: "filters", role: "group", "aria-label": "Which criteria to show" },
+    [["all", `All criteria (${all.length})`], ["attention", `Only what needs attention (${nAttention})`]].map(([k, label]) =>
+      h("button", { class: "chip", "aria-pressed": String(filter === k), onclick: () => { S.r.critFilter = k; render(); } }, label)));
+
+  S.r.openGroups = S.r.openGroups || {};
+  const groups = DISPLAY_ORDER.map((key) => {
+    const g = CRITERIA_GROUPS.find((x) => x.key === key);
+    const rows = all.filter((x) => x.group === key);
+    const shown = filter === "attention" ? rows.filter((x) => x.attention) : rows;
+    if (!shown.length) return null;
+    const [verdict, cls] = groupVerdict(key, rows);
+    const isOpen = filter === "attention" || (key in S.r.openGroups ? S.r.openGroups[key] : cls === "b-bad" || cls === "b-warn" || key === "general");
+    const intro = key === "form" && S.criteria ? `${g.intro} ${S.criteria.precedence}` : g.intro;
+    return h("details", { class: "crit-group", open: isOpen, ontoggle: (e) => (S.r.openGroups[key] = e.target.open) },
+      h("summary", {}, h("span", {}, g.title), badge(verdict, cls), h("span", { class: "small muted" }, `${rows.length} criteria`)),
+      h("div", { class: "crit-group-body" },
+        h("p", { class: "muted small" }, intro),
+        h("div", { class: "crit-head", "aria-hidden": "true" }, h("span", {}, "IHH criterion"), h("span", {}, "Result"), h("span", {}, "Why")),
+        shown.map((x) => criterionRow(x, editing, key !== "general" && key !== "form"))));
+  });
+  return h("div", { class: "criteria" },
+    h("p", { class: "muted small" }, "Each line shows IHH's own wording, the AI's result, and the reason, with the page it came from."),
+    chips,
+    groups.some(Boolean) ? groups : h("div", { class: "notice notice-ok" }, h("p", {}, "Nothing needs attention.")));
+}
+
+function criterionRow({ rule, res, ov, status }, editing, showSection) {
+  let words;
+  if (rule.superseded_by) words = [`Replaced by ${rule.superseded_by}`, "b-off"];
+  else if (!res) words = ["Not checked", "b-warn"];
+  else words = resultWords(rule.kind, status);
+
+  const why = [];
+  if (rule.superseded_by) {
+    why.push(h("p", {}, "IHH's admission criteria outline takes priority over the referral form here. See ", rule.superseded_by, "."));
+  } else if (!res) {
+    why.push(h("p", { class: "why-disabled" }, "The AI did not return a result for this criterion. Check it yourself."));
+  } else {
+    why.push(h("p", {}, res.reasoning, res.confidence === "low" ? h("span", { class: "muted" }, " (the AI is not sure)") : null));
+    if (res.answer) why.push(h("p", {}, h("strong", {}, "Answer: "), res.answer));
+    if (res.hospital_question) why.push(h("p", {}, h("strong", {}, "Ask the hospital: "), res.hospital_question));
+    for (const e of res.evidence) why.push(evidenceLine(e));
+    if (ov && !editing) why.push(h("p", {}, h("strong", {}, "Your reason: "), ov.note));
+  }
+
   let override = null;
-  if (editing) {
+  if (editing && res && !rule.superseded_by) {
     const sel = h("select", {
-      "aria-label": `Change result for ${x.rule_id}`,
+      "aria-label": `Change result for ${rule.id}`,
       onchange: (e) => {
-        if (e.target.value === "") delete S.r.overrides[x.rule_id];
-        else S.r.overrides[x.rule_id] = { status: e.target.value, note: (ov && ov.note) || "" };
-        render(); document.querySelector(`[data-note="${x.rule_id}"]`)?.focus();
+        if (e.target.value === "") delete S.r.overrides[rule.id];
+        else S.r.overrides[rule.id] = { status: e.target.value, note: (ov && ov.note) || "" };
+        render(); document.querySelector(`[data-note="${rule.id}"]`)?.focus();
       },
     }, h("option", { value: "" }, "Keep the AI result"),
-    Object.entries(RULE_STATUS).filter(([k]) => k !== x.status).map(([k, [l]]) => h("option", { value: k, selected: ov && ov.status === k }, `Change to: ${l}`)));
+    ["pass", "fail", "unknown", "needs_human", "not_applicable"].filter((k) => k !== res.status)
+      .map((k) => h("option", { value: k, selected: ov && ov.status === k }, `Change to: ${resultWords(rule.kind, k)[0]}`)));
     override = h("div", { class: "override" }, sel,
-      ov ? h("input", { type: "text", "data-note": x.rule_id, placeholder: "Why? (required)", value: ov.note, "aria-label": `Reason for changing ${x.rule_id}`, oninput: (e) => (ov.note = e.target.value) }) : h("span"));
-  } else if (ov) {
-    override = h("p", {}, badge(`You changed this to: ${RULE_STATUS[ov.status][0]}`, "b-warn"), " ", ov.note);
+      ov ? h("input", { type: "text", "data-note": rule.id, placeholder: "Why? (required)", value: ov.note, "aria-label": `Reason for changing ${rule.id}`, oninput: (e) => (ov.note = e.target.value) }) : h("span"));
   }
-  return h("div", { class: "rule" },
-    h("div", {}, h("div", { class: "rule-id" }, x.rule_id), badge(label, cls)),
-    h("div", { class: "rule-body" },
-      h("div", { class: "rule-text" }, x.text),
-      h("div", {}, x.reasoning, x.confidence === "low" ? h("span", { class: "muted" }, " (AI is not sure)") : null),
-      x.answer ? h("div", {}, h("strong", {}, "Answer: "), x.answer) : null,
-      x.hospital_question ? h("div", {}, h("strong", {}, "Ask the hospital: "), x.hospital_question) : null,
-      x.superseded_by ? h("div", { class: "muted small" }, `Replaced by ${x.superseded_by}`) : null,
-      x.evidence.map(evidenceLine),
-      override));
+
+  const quiet = (status === "not_applicable" && !ov && rule.kind !== "ask" && rule.kind !== "note") || !!rule.superseded_by;
+  return h("div", { class: `crit ${quiet ? "crit-quiet" : ""}` },
+    h("div", { class: "crit-rule" },
+      h("div", {}, h("span", { class: "rule-id" }, rule.id), showSection ? h("span", { class: "small muted" }, "  ", rule.section) : null),
+      h("div", { class: "crit-text" }, rule.text)),
+    h("div", { class: "crit-result" }, badge(...words),
+      ov && res ? h("div", { class: "edited-mark" }, `Changed by you. The AI said: ${resultWords(rule.kind, res.status)[0]}`) : null),
+    h("div", { class: "crit-why" }, why, override));
 }
 
 // ----- Table 3: patient -----
@@ -1095,6 +1196,7 @@ async function importCensus(e) {
     b.textContent = "Demo mode: referrals are invented sample data. Decisions here do not change real beds.";
   }
   api("/api/facilities").then((f) => (S.beds.facilities = f)).catch(() => {});
+  api("/api/criteria").then((c) => { S.criteria = c; if (S.tab === "review") render(); }).catch(() => {});
   // Restore the place after a page refresh: #R-7F3A2C/review or #beds
   const [first, second] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (first && !["upload", "review", "decide", "beds"].includes(first)) openReferral(first, ["review", "decide"].includes(second) ? second : null);

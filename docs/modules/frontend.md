@@ -9,8 +9,13 @@
    **Confirm** and **Edit**:
    - *Bed*: held bed + other matches (`/bed-matches`), county used for matching. Edit = choose another bed or change
      the county (`POST /county`, which re-holds a bed).
-   - *Why*: review reasons, contradictions, unverified quotes, questions for the hospital, decision path and every rule
-     with evidence (opens the page image). Edit = override a rule's status; a reason is required (`rule_overrides`).
+   - *Why*: review reasons, contradictions, unverified quotes, questions for the hospital, then the **admission
+     criteria checklist**: every IHH criterion from `GET /api/criteria` in the outline's order (general criteria,
+     requirements, exclusions, arrangements, documents, accepted conditions by body system, questions, referral form
+     screen). Each line shows IHH's wording, a result phrased for its kind ("Met", "Not present", "In the packet",
+     "Can't tell from the packet"), and the AI's reason with page-linked quotes. Groups needing attention open first;
+     superseded form rules say which outline rule replaces them; a criterion with no AI result shows "Not checked".
+     Edit = override a criterion's result; a reason is required (`rule_overrides`).
    - *Patient*: `summary` fields, `null` shown as "Unknown". Edit = corrections, sent as decision `notes`
      (the API has no patient-edit route, so the AI analysis itself is not changed).
 3. **Decide**: Approve (all three tables confirmed + a bed), Request info or Deny (Why + Patient confirmed). Then the

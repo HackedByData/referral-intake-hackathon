@@ -71,6 +71,7 @@ The coordinator always makes the final call. The AI decision is a recommendation
 | GET | `/api/assignments` | `?active=true` (default) | `AssignmentView[]` |
 | POST | `/api/assignments/{id}/discharge` | | `AssignmentView` · `404` |
 | GET | `/api/audit` | `?referral_id=` | `AuditEventView[]` (oldest first) |
+| GET | `/api/criteria` | | `CriteriaView`: every IHH admission criterion (v2.1) |
 
 Errors: `{ "detail": "human-readable message" }` with the status codes above.
 
@@ -333,6 +334,16 @@ interface AssignmentView {
 
 interface BedImportReport { created: number; updated: number; errors: string[]; }
 
+// ---------- Criteria (v2.1) ----------
+interface CriteriaView {
+  precedence: string;                    // how form vs outline conflicts are settled (outline wins)
+  kinds: Record<RuleKind, string>;       // plain-English meaning of each kind
+  rules: { id: string; source: RuleSource; section: string; kind: RuleKind; text: string;
+           group: string; human_review: boolean; superseded_by?: string }[];
+  // Superseded form rules (FORM-M6, FORM-X3, FORM-X6) are listed here but never evaluated,
+  // so they have no entry in ReferralDetails.rule_results.
+}
+
 // ---------- Audit ----------
 interface AuditEventView {
   id: number; ts: string; actor: string; referral_id?: string;
@@ -435,4 +446,5 @@ interface AuditEventView {
 - v1 (2026-10-17): initial contract.
 - v2 (2026-10-17): census-backed BMS + county matching (additive): facilities endpoints, bed detail with patient info, census import, county confirm, `needs_cleaning` bed status, `county_needed` review reason, `ReferralView.county`, `BedView.site_id/county/program_type/stay`, `BedSummary.needs_cleaning`. See §8.
 - v2.1 (2026-10-17): `BedSummary.needs_cleaning`, `BedUpdate.status` accepts `needs_cleaning`, `AssignmentView.referral_id` optional (null for census/seed stays), county route `422`, census route `413`, `FacilityUpdate` null-clears county. Census re-import reports a conflict and leaves the bed unchanged when it has an active hold or a referral stay.
+- v2.1 (2026-10-17): `GET /api/criteria` (additive) so the UI can list every admission criterion, including superseded ones and any the AI did not return.
 - v1.1 (2026-10-17): behaviour notes (§7) from code review: nulls, button disabling, 409/404/500 cases, per-row import errors, unverified-evidence reviews. No field or route changes.

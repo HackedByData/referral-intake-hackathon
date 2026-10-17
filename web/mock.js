@@ -42,40 +42,72 @@
     rule_ids: triggered[node] || [],
   }));
 
-  const rules = [
-    { rule_id: "MOB-3", status: "pass", confidence: "high", kind: "must", section: "Mobility", source: "outline",
-      text: "Patient must be able to ambulate at least 100 ft (rest breaks are acceptable) at modified independence if not wheelchair dependent",
-      reasoning: "PT note says the patient walked 150 ft with a walker without help.",
+  // Invented results for this demo patient. Rule IDs and wording come from the real criteria (GET /api/criteria);
+  // every rule without an entry here gets a generic result that says "Demo".
+  const SPECIFIC = {
+    "GEN-1": { status: "pass", reasoning: "Housing section says the patient has no stable housing, and the H&P says they are too weak to recover outside.",
+      evidence: [{ page: 1, quote: "Housing: unsheltered", verified: true }] },
+    "MOB-1": { status: "pass", reasoning: "PT note says the patient uses a walker without help.",
+      evidence: [{ page: 3, quote: "front wheeled walker, modified independent", verified: true }] },
+    "MOB-2": { status: "pass", reasoning: "A PT evaluation is included.", evidence: [{ page: 3, quote: "Physical Therapy Evaluation", verified: true }] },
+    "MOB-3": { status: "pass", reasoning: "PT note says the patient walked 150 ft with a walker without help. Page 2 says 20 ft, so check the conflict.",
       evidence: [{ page: 3, quote: "Patient ambulated 150 ft with front wheeled walker, modified independent", verified: true }] },
-    { rule_id: "MOB-4", status: "unknown", confidence: "medium", kind: "must", section: "Mobility", source: "outline",
-      text: "Patient must be able to transfer independently",
-      reasoning: "The packet does not describe transfers.", evidence: [],
-      hospital_question: "Can the patient get in and out of bed without help?" },
-    { rule_id: "INF-1", status: "unknown", confidence: "high", kind: "document", section: "Infection control", source: "outline",
-      text: "MRSA nares swab result", reasoning: "No MRSA swab result appears in the packet.", evidence: [],
-      hospital_question: "Can you send the MRSA nares swab result?" },
-    { rule_id: "OTH-3", status: "unknown", confidence: "medium", kind: "conditional", section: "Other", source: "outline",
-      text: "IV antibiotics require home health to maintain the line",
-      reasoning: "IV antibiotics are ordered but home health is not confirmed.",
+    "MOB-4": { status: "not_applicable", reasoning: "The patient is not wheelchair dependent." },
+    "MH-2": { status: "pass", confidence: "low", reasoning: "Psych screen says the patient denies suicidal thoughts.",
+      evidence: [{ page: 1, quote: "Denies SI/HI", verified: false }] },
+    "COG-1": { status: "unknown", reasoning: "The packet does not say whether the patient can take medications on their own.",
+      hospital_question: "Can the patient self-administer their medications?" },
+    "OTH-3": { status: "unknown", reasoning: "IV antibiotics are ordered but home health is not confirmed.",
       evidence: [{ page: 2, quote: "Continue IV antibiotic via PICC x 14 days", verified: true }],
       hospital_question: "Has home health been arranged to maintain the IV and give the antibiotic?" },
-    { rule_id: "INT-I2", status: "pass", confidence: "high", kind: "exclude", section: "Integumentary (ineligible)", source: "by_system",
-      text: "Wounds requiring more than daily dressing changes",
-      reasoning: "Dressing changes are once a day.",
-      evidence: [{ page: 2, quote: "Dressing change daily to left lower leg", verified: true }] },
-    { rule_id: "PSY-2", status: "pass", confidence: "low", kind: "exclude", section: "Behavioral health (ineligible)", source: "by_system",
-      text: "Active suicidal ideation",
-      reasoning: "Psych screen is negative.",
-      evidence: [{ page: 1, quote: "Denies SI/HI", verified: false }] },
-    { rule_id: "GEN-1", status: "pass", confidence: "high", kind: "must", section: "General eligibility", source: "outline",
-      text: "Adult experiencing homelessness who needs short-term recuperative care",
-      reasoning: "Housing section says the patient has no stable housing.",
-      evidence: [{ page: 1, quote: "Housing: unsheltered", verified: true }] },
-    { rule_id: "DOC-6", status: "pass", confidence: "high", kind: "document", section: "Documents", source: "checklist",
-      text: "Medication list", reasoning: "A medication record is present.", evidence: [{ page: 4, quote: "Medication Administration Record", verified: true }] },
-    { rule_id: "FORM-A1", status: "not_applicable", confidence: "high", kind: "ask", section: "Referral form", source: "form",
-      text: "Does the patient have pets?", reasoning: "Answered on the form.", answer: "not stated", evidence: [] },
-  ];
+    "ID-3": { status: "unknown", reasoning: "IV antibiotics are ordered; no home health order is in the packet.",
+      evidence: [{ page: 2, quote: "Continue IV antibiotic via PICC x 14 days", verified: true }],
+      hospital_question: "Has home health been ordered for the IV antibiotics?" },
+    "INF-1": { status: "unknown", reasoning: "No MRSA swab result appears in the packet.", hospital_question: "Can you send the MRSA nares swab result?" },
+    "INT-E1": { status: "pass", reasoning: "Admitted for cellulitis of the left lower leg.", evidence: [{ page: 2, quote: "Left lower extremity cellulitis", verified: true }] },
+    "INT-E3": { status: "unknown", reasoning: "IV antibiotics are ordered; home health is not confirmed.",
+      evidence: [{ page: 2, quote: "Continue IV antibiotic via PICC x 14 days", verified: true }] },
+    "DOC-1": { status: "pass", reasoning: "IHH referral form is on page 1.", evidence: [{ page: 1, quote: "Recuperative Care Referral Form", verified: true }] },
+    "DOC-4": { status: "pass", reasoning: "History and physical is on page 2.", evidence: [{ page: 2, quote: "History and Physical", verified: true }] },
+    "DOC-7": { status: "pass", reasoning: "Medication record is on page 4.", evidence: [{ page: 4, quote: "Medication Administration Record", verified: true }] },
+    "ID-Q1": { status: "not_applicable", answer: "Left lower leg", reasoning: "Stated in the H&P." },
+  };
+  const NOT_THIS_PATIENT = ["Diabetes", "Cardiac", "Respiratory Illness", "End of life care"];
+
+  function demoResult(rule) {
+    const base = { rule_id: rule.id, kind: rule.kind, section: rule.section, source: rule.source, text: rule.text,
+      superseded_by: rule.superseded_by || null, human_review: !!rule.human_review,
+      evidence: [], answer: null, hospital_question: null, confidence: "high" };
+    if (SPECIFIC[rule.id]) return { ...base, ...SPECIFIC[rule.id] };
+    if (NOT_THIS_PATIENT.includes(rule.section)) return { ...base, status: "not_applicable", reasoning: `Demo: the patient has no ${rule.section.toLowerCase()} condition.` };
+    if (rule.kind === "eligible" || (rule.source === "by_system" && rule.section.endsWith("(eligible)"))) return { ...base, status: "not_applicable", reasoning: "Demo: this condition is not in the packet." };
+    if (rule.kind === "exclude") return { ...base, status: "pass", reasoning: "Demo: nothing in the invented packet suggests this." };
+    if (rule.kind === "ask") return { ...base, status: "not_applicable", answer: "not stated", reasoning: "Demo: the packet does not answer this." };
+    if (rule.kind === "note") return { ...base, status: "not_applicable", reasoning: "Demo: does not apply to this patient." };
+    if (rule.kind === "document") return { ...base, status: "pass", reasoning: "Demo: present in the invented packet." };
+    if (rule.kind === "conditional") return { ...base, status: "pass", reasoning: "Demo: no arrangement needed for this patient." };
+    if (rule.id.startsWith("GEN-")) return { ...base, status: "not_applicable", reasoning: "Demo: GEN-1 already applies." };
+    return { ...base, status: "pass", reasoning: "Demo: the invented packet shows the patient meets this." };
+  }
+
+  let criteria = null;
+  async function loadCriteria() {
+    try { const r = await fetch("/api/criteria"); criteria = r.ok ? (await r.json()).rules : []; } catch { criteria = []; }
+    if (!criteria.length) {
+      criteria = Object.keys(SPECIFIC).map((id) => ({ id, kind: "must", section: "Demo", source: "outline", text: "(criteria text unavailable: server offline)" }));
+    }
+  }
+
+  function rulesFor(needs) {
+    return criteria.filter((r) => !r.superseded_by).map((rule) => {
+      const res = demoResult(rule);
+      if (needs) return res;
+      // The "approve" demo: everything open is resolved and every quote verified.
+      return { ...res, status: res.status === "unknown" ? "pass" : res.status, hospital_question: null, confidence: "high",
+        reasoning: res.status === "unknown" ? "Demo: confirmed in the packet." : res.reasoning,
+        evidence: res.evidence.map((e) => ({ ...e, verified: true })) };
+    });
+  }
 
   function summary(sex) {
     return {
@@ -102,22 +134,23 @@
     const needs = decision === "needs_review";
     const rec = {
       decision,
-      headline: needs ? "Needs review: 3 item(s) to resolve before deciding" : "Meets IHH admission criteria; bed held",
+      headline: needs ? "Needs review: 5 item(s) to resolve before deciding" : "Meets IHH admission criteria; bed held",
       top_reasons: needs
         ? ["MRSA swab result is not in the packet [INF-1]", "Home health for IV antibiotics is not confirmed [OTH-3]", "Pages disagree on walking distance [MOB-3]"]
         : ["Walks 150 ft with walker (p.3) [MOB-3]", "Unsheltered and needs recuperative care (p.1) [GEN-1]", "No exclusions found"],
       review_reasons: needs ? [
         { kind: "missing_info", rule_ids: ["INF-1"], detail: "MRSA swab result is not in the packet" },
-        { kind: "missing_info", rule_ids: ["OTH-3"], detail: "Home health for IV antibiotics is not confirmed" },
+        { kind: "missing_info", rule_ids: ["OTH-3", "ID-3"], detail: "Home health for IV antibiotics is not confirmed" },
+        { kind: "missing_info", rule_ids: ["COG-1"], detail: "The packet does not say if the patient can take their own medications" },
         { kind: "conflict", rule_ids: ["MOB-3"], detail: "Page 2 and page 3 disagree about walking distance" },
-        { kind: "unverified_evidence", rule_ids: ["PSY-2"], detail: "Quote for PSY-2 could not be found on page 1" },
+        { kind: "unverified_evidence", rule_ids: ["MH-2"], detail: "Quote for MH-2 could not be found on page 1" },
       ] : [],
       hospital_questions: needs ? [
         { rule_id: "INF-1", question: "Can you send the MRSA nares swab result?" },
         { rule_id: "OTH-3", question: "Has home health been arranged to maintain the IV and give the antibiotic?" },
-        { rule_id: "MOB-4", question: "Can the patient get in and out of bed without help?" },
+        { rule_id: "COG-1", question: "Can the patient self-administer their medications?" },
       ] : [],
-      tree: tree(needs ? { missing_info: ["INF-1", "OTH-3"], conflicts: ["MOB-3"], unverified: ["PSY-2"] } : {}),
+      tree: tree(needs ? { missing_info: ["INF-1", "OTH-3", "ID-3", "COG-1"], conflicts: ["MOB-3"], unverified: ["MH-2"] } : {}),
       held_bed: beds[0],
       alternative_beds: beds.slice(1),
     };
@@ -130,9 +163,7 @@
       details: {
         id, status: "ready_for_review", prompt_version: "demo", model: "claude-opus-5-5",
         summary: needs ? summary("male") : { ...summary("male"), conflicts: [] },
-        rule_results: needs ? rules : rules.map((r) => ({
-          ...r, status: r.status === "unknown" ? "pass" : r.status, hospital_question: null,
-          evidence: r.evidence.map((e) => ({ ...e, verified: true })) })),
+        rule_results: rulesFor(needs),
         recommendation: rec,
         pages: [1, 2, 3, 4].map((p) => ({ page: p, doc_type: ["IHH referral form", "H&P", "PT evaluation", "medication record"][p - 1], orientation: "upright", legibility: "good" })),
         timings: { total: 141.2 },
@@ -144,7 +175,7 @@
   const store = {};
   let ready = null;
   async function init() {
-    const beds = await loadBedPool();
+    const [beds] = await Promise.all([loadBedPool(), loadCriteria()]);
     store["R-DEMO01"] = makeReferral("R-DEMO01", "demo-needs-review.pdf", "needs_review", beds);
     store["R-DEMO02"] = makeReferral("R-DEMO02", "demo-approve.pdf", "approve", beds.slice(1).concat(beds[0]));
   }
