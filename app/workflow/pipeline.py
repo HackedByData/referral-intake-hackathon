@@ -12,6 +12,7 @@ from app.config import Settings, get_settings
 from app.db import get_engine
 from app.ingest.ocr import transcribe_packet
 from app.llm import StructuredLLM
+from app.rules.county import suggest_county
 from app.rules.criteria import Criteria, load_criteria
 from app.rules.evaluate import evaluate_packet
 from app.rules.prompts import PROMPT_VERSION
@@ -64,6 +65,10 @@ class Pipeline:
                                                              concurrency=self.settings.rules_concurrency)
             results = verify_results(results, packet)
             summary = verify_summary(summary, packet)
+            suggestion = suggest_county(summary)  # the model only extracts; code maps plan -> county
+            summary = summary.model_copy(update={
+                "suggested_county": suggestion,
+                "bed_needs": summary.bed_needs.model_copy(update={"county": suggestion.county})})
             with Session(self.engine_getter()) as s:
                 options = beds.find_matches(s, summary.bed_needs, for_referral=referral_id)
                 rec = decide(self.criteria.rules, results, summary, options)

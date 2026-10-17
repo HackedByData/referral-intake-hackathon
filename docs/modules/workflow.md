@@ -15,3 +15,5 @@ Double submits → 409.
 **Drafts are never sent.** Kipu is mocked (event rule: no IHH systems).
 
 **Testing:** `pytest tests/test_workflow_parts.py tests/test_pipeline.py tests/test_decisions.py tests/test_api_referrals.py`.
+
+**County:** the pipeline sets `suggested_county` and `bed_needs.county` before matching; no county means no hold. `POST /api/referrals/{id}/county` (status `ready_for_review` or `info_requested`) records the coordinator's county, releases the old hold, re-matches without AI and re-holds; audit action `county_confirmed`.

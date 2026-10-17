@@ -11,9 +11,10 @@ from app.db import get_session
 from app.ingest.ocr import CORRECTION
 from app.ingest.render import InvalidPDF, page_count, render_page, validate_pdf
 from app.rules.criteria import load_criteria
+from app.rules.tree import decide as decide_tree
 from app.schemas import (
-    AnalysisResult, BedOption, CoordinatorDecision, CoordinatorDecisionRecord, Drafts, PageInfo, PageMarkdown,
-    ReferralDetails, ReferralListItem, ReferralView, RuleResultView,
+    AnalysisResult, BedOption, CoordinatorDecision, CoordinatorDecisionRecord, CountyConfirm, CountySuggestion, Drafts, PageInfo,
+    PageMarkdown, ReferralDetails, ReferralListItem, ReferralView, ReviewReason, RuleResultView,
 )
 from app.workflow import audit
 from app.workflow.decisions import DecisionError, apply_decision, get_kipu
@@ -48,7 +49,8 @@ def _view(ref: Referral) -> ReferralView:
         **_list_item(ref), progress=ref.progress, error=ref.error,
         one_liner=result.summary.one_liner if result else None,
         recommendation=result.recommendation if result else None,
-        coordinator_decision=CoordinatorDecisionRecord.model_validate_json(ref.decision_json) if ref.decision_json else None)
+        coordinator_decision=CoordinatorDecisionRecord.model_validate_json(ref.decision_json) if ref.decision_json else None,
+        county=result.summary.suggested_county if result else None)
 
 
 @router.post("", response_model=ReferralView, status_code=202)
@@ -149,6 +151,42 @@ def decide(referral_id: str, decision: CoordinatorDecision, session: Session = D
         ref = apply_decision(session, referral_id, decision, load_criteria(), get_kipu())
     except DecisionError as e:
         raise HTTPException(e.status_code, str(e))
+    return _view(ref)
+
+
+@router.post("/{referral_id}/county", response_model=ReferralView)
+def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Depends(get_session)):
+    """Coordinator confirms or overrides the county; re-runs matching (no AI) and re-holds."""
+    ref = _get(session, referral_id)
+    if ref.status not in ("ready_for_review", "info_requested") or not ref.result_json:
+        raise HTTPException(409, f"County cannot be changed in status '{ref.status}'")
+    county = body.county.strip()
+    if not county:
+        raise HTTPException(422, "county must not be empty")
+    result = AnalysisResult.model_validate_json(ref.result_json)
+    old = result.summary.suggested_county or CountySuggestion()
+    basis = f"Confirmed by {body.coordinator}" + (f"; AI suggestion: {old.basis}" if old.basis else "")
+    summary = result.summary.model_copy(update={
+        "suggested_county": old.model_copy(update={"county": county, "confirmed": True,
+                                                   "confirmed_by": body.coordinator, "basis": basis}),
+        "bed_needs": result.summary.bed_needs.model_copy(update={"county": county})})
+    beds.release_hold(session, referral_id)
+    options = beds.find_matches(session, summary.bed_needs, for_referral=referral_id)
+    rec = decide_tree(load_criteria().rules, result.rule_results, summary, options)
+    if rec.held_bed:
+        try:
+            beds.hold(session, rec.held_bed.bed_id, referral_id, get_settings().hold_ttl_hours)
+        except (beds.BedUnavailable, beds.BedNotFound):
+            rec = rec.model_copy(update={"held_bed": None, "review_reasons": rec.review_reasons + [
+                ReviewReason(kind="no_bed", rule_ids=[], detail="Matched bed was taken before it could be held.")]})
+    result = result.model_copy(update={"summary": summary, "recommendation": rec})
+    ref.result_json = result.model_dump_json()
+    ref.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    session.add(ref)
+    session.commit()
+    audit.record(session, "county_confirmed", actor=body.coordinator, referral_id=referral_id, county=county,
+                 held_bed=rec.held_bed.bed_id if rec.held_bed else None)
+    session.refresh(ref)
     return _view(ref)
 
 
