@@ -1,6 +1,5 @@
 """Referral and audit tables. JSON columns hold schemas.AnalysisResult / CoordinatorDecisionRecord / Drafts."""
-from datetime import datetime
-
+from pydantic import NaiveDatetime
 from sqlmodel import Field, SQLModel
 
 
@@ -12,8 +11,8 @@ class Referral(SQLModel, table=True):
     status: str = "uploaded"
     progress: str | None = None
     error: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: NaiveDatetime
+    updated_at: NaiveDatetime
     result_json: str | None = None
     decision_json: str | None = None
     drafts_json: str | None = None
@@ -21,7 +20,7 @@ class Referral(SQLModel, table=True):
 
 class AuditEvent(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    ts: datetime
+    ts: NaiveDatetime
     actor: str
     referral_id: str | None = Field(default=None, index=True)
     action: str

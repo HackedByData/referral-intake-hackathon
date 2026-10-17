@@ -10,7 +10,7 @@ from app.workflow.models import AuditEvent
 
 def record(session: Session, action: str, actor: str = "system", referral_id: str | None = None,
            **detail) -> AuditEvent:
-    ev = AuditEvent(ts=datetime.now(timezone.utc), actor=actor, referral_id=referral_id,
+    ev = AuditEvent(ts=datetime.now(timezone.utc).replace(tzinfo=None), actor=actor, referral_id=referral_id,
                     action=action, detail_json=json.dumps(detail, default=str))
     session.add(ev)
     session.commit()
