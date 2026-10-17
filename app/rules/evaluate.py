@@ -61,6 +61,9 @@ async def evaluate_group(llm, packet: PacketText, criteria: Criteria, group: str
             return a + b
         log.error("Group %s failed: %s", group, e)
         return _ensure_coverage(rules, [])
+    except Exception as e:  # rate limit, timeout, connection error: never cancel the other groups
+        log.error("Group %s failed with %s: %s", group, type(e).__name__, e)
+        return _ensure_coverage(rules, [])
 
 
 def superseded_results(criteria: Criteria) -> list[RuleResult]:

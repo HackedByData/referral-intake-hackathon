@@ -96,11 +96,18 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     # 6. unverified failures can never deny
     unverified = [r for r in res.values() if kind[r.rule_id] in ("must", "exclude") and r.rule_id not in human
                   and r.rule_id not in GEN_IDS and r.status == "fail" and not _verified(r)]
-    steps.append(_step("unverified", unverified, "All failing findings are backed by verified quotes.",
-                       "A failing finding could not be matched to the packet text; check it by hand."))
+    # ...and an approve can never rest on a passing 'must' finding (GEN-* included) without a verified quote.
+    unverified_pass = [r for r in res.values() if kind[r.rule_id] == "must" and r.rule_id not in human
+                       and r.status == "pass" and not _verified(r)]
+    steps.append(_step("unverified", unverified + unverified_pass,
+                       "All findings are backed by verified quotes.",
+                       "A finding could not be matched to the packet text; check it by hand."))
     for r in unverified:
         reasons.append(ReviewReason(kind="unverified_evidence", rule_ids=[r.rule_id],
                                     detail=f"{_first_sentence(r.reasoning)} (quote not found on the cited page)"))
+    for r in unverified_pass:
+        reasons.append(ReviewReason(kind="unverified_evidence", rule_ids=[r.rule_id],
+                                    detail=f"{_first_sentence(r.reasoning)} (passing finding not matched to the packet)"))
 
     # 7. conflicts touching anything flagged
     flagged = {r.rule_id for r in excl + must_fail + human_hits + missing + unverified}
@@ -133,7 +140,7 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
         top = [f"{rr.detail} [{', '.join(rr.rule_ids)}]" if rr.rule_ids else rr.detail for rr in reasons][:3]
         headline = f"Needs review: {len(reasons)} item(s) to resolve before deciding"
     else:
-        top = [_reason_line(res[i]) for i in APPROVE_HIGHLIGHTS if i in res and res[i].status == "pass"][:3]
+        top = [_reason_line(res[i]) for i in APPROVE_HIGHLIGHTS if i in res and res[i].status == "pass" and _verified(res[i])][:3]
         headline = (f"Recommend approve: meets admission criteria; bed {held.label} in room {held.room} held"
                     if held else "Recommend approve: eligible, but no matching bed available")
 

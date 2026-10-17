@@ -80,3 +80,10 @@ async def test_failed_small_group_becomes_unknown():
 def test_superseded_results():
     out = superseded_results(load_criteria())
     assert {r.rule_id for r in out} == {"FORM-M6", "FORM-X3", "FORM-X6"}
+
+
+async def test_non_llm_error_becomes_unknown_not_crash():
+    rules = [make_rule(f"A-{i}") for i in range(10)]
+    out = await evaluate_group(FakeLLM(lambda *a: RuntimeError("rate limited")), make_packet(),
+                               load_criteria(), "function", rules)
+    assert len(out) == 10 and all(r.status == "unknown" for r in out)

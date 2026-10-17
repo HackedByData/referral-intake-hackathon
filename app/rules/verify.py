@@ -9,6 +9,8 @@ FUZZY_THRESHOLD = 90
 MIN_FUZZY_LEN = 12
 _DROP = re.compile(r"[^a-z0-9.%\s]")
 _SPACE = re.compile(r"\s+")
+_NUM = re.compile(r"\d+(?:\.\d+)?")
+NEGATIONS = {"no", "not", "denies", "denied", "without", "negative", "never", "none"}
 
 
 def normalize(s: str) -> str:
@@ -24,6 +26,11 @@ def quote_on_page(quote: str, page_md: str) -> bool:
         return True
     if len(q) < MIN_FUZZY_LEN:
         return False
+    # Fuzzy path only: numbers and negations must survive exactly, or the meaning may have flipped.
+    page_tokens = set(text.split())
+    for tok in q.split():
+        if (_NUM.fullmatch(tok) or tok in NEGATIONS) and tok not in page_tokens:
+            return False
     return fuzz.partial_ratio(q, text) >= FUZZY_THRESHOLD
 
 

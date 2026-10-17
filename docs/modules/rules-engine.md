@@ -15,6 +15,8 @@
 - `tree.py`: order = exclusions → must → general eligibility → human review → missing info → unverified →
   conflicts → bed. Deny needs **verified** evidence. OTH-2 never denies. `ask` never blocks.
 
+**Guardrails:** a `must` pass (GEN-* included) with no verified quote forces needs_review (exclude passes exempt); fuzzy quote matches additionally require every number and negation token to appear on the page; any non-LLMError from a group call yields all-unknown for that group instead of crashing the run.
+
 **Status semantics:** always from the eligibility point of view (see `app/schemas.py` and `RULES_TASK`).
 
 **Testing:** `pytest tests/test_criteria.py tests/test_verify.py tests/test_tree.py tests/test_evaluate.py`.

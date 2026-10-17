@@ -50,3 +50,11 @@ def test_verify_summary_conflicts():
                                          related_rule_ids=[], why_it_matters="")])
     st = verify_summary(s, packet).conflicts[0].statements
     assert st[0].verified is True and st[1].verified is False
+
+
+def test_fuzzy_rejects_flipped_number():
+    assert not quote_on_page("Walks 150 ft with front wheeled walker", "Walks 15 ft with front wheeled walker today")
+
+
+def test_fuzzy_rejects_flipped_negation():
+    assert not quote_on_page("patient is not suicidal today", "patient is suicidal today per note")

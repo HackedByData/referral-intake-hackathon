@@ -120,3 +120,27 @@ def test_missing_result_for_rule_is_treated_as_not_evaluated():
     res = [r for r in results() if r.rule_id != "MH-2"]
     rec = decide(RULES, res, make_summary(), BEDS)
     assert rec.decision == "needs_review"
+
+
+def test_must_pass_without_verified_evidence_needs_review():
+    res = results()
+    res[3] = make_result("MOB-3", "pass", verified=False)
+    rec = decide(RULES, res, make_summary(), BEDS)
+    assert rec.decision == "needs_review"
+    assert any(r.kind == "unverified_evidence" and r.rule_ids == ["MOB-3"] for r in rec.review_reasons)
+    assert "MOB-3" in node(rec, "unverified").rule_ids
+
+
+def test_unverified_general_pass_needs_review():
+    res = results()
+    res[0] = make_result("GEN-1", "pass", verified=False)
+    rec = decide(RULES, res, make_summary(), BEDS)
+    assert rec.decision == "needs_review"
+    assert any(r.kind == "unverified_evidence" and r.rule_ids == ["GEN-1"] for r in rec.review_reasons)
+
+
+def test_unverified_exclude_pass_still_approves():
+    res = results()
+    res[4] = make_result("MH-2", "pass", verified=False)
+    rec = decide(RULES, res, make_summary(), BEDS)
+    assert rec.decision == "approve"
