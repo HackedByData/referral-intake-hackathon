@@ -1,4 +1,4 @@
-<img src="web/raft.svg" alt="Raft logo" width="96">
+<img src="web/raft-logo.png" alt="Raft logo" width="180">
 
 # Raft
 
