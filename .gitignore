@@ -1,0 +1,24 @@
+# Real (de-identified) referral packets: NEVER commit. Ground rule 1; disqualification risk.
+*.zip
+*.pdf
+packets/
+!docs/**/*.pdf
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Local data / generated output (may contain packet-derived text)
+data/
+*.sqlite
+*.db
