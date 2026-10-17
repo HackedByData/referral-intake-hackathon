@@ -2,12 +2,16 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlmodel import Session
 
-from app.beds import service
+from app.beds import census, service
 from app.beds.importer import import_beds
 from app.db import get_session
-from app.schemas import AssignmentView, BedCreate, BedImportReport, BedSummary, BedUpdate, BedView
+from app.schemas import (
+    AssignmentView, BedCreate, BedDetail, BedImportReport, BedSummary, BedUpdate, BedView, CensusImportReport,
+    FacilityUpdate, FacilityView,
+)
 
-router = APIRouter(prefix="/api", tags=["beds"])
+MAX_CENSUS_BYTES = 20 * 1024 * 1024
+router =APIRouter(prefix="/api", tags=["beds"])
 
 
 @router.get("/beds", response_model=list[BedView])
@@ -18,6 +22,44 @@ def list_beds(site: str | None = None, status: str | None = None, session: Sessi
 @router.get("/beds/summary", response_model=BedSummary)
 def bed_summary(session: Session = Depends(get_session)):
     return service.summary(session)
+
+
+@router.get("/beds/{bed_id}", response_model=BedDetail)
+def bed_detail(bed_id: str, session: Session = Depends(get_session)):
+    try:
+        return service.bed_detail(session, bed_id)
+    except service.BedNotFound:
+        raise HTTPException(404, f"Bed {bed_id} not found")
+
+
+@router.get("/facilities", response_model=list[FacilityView])
+def list_facilities(session: Session = Depends(get_session)):
+    return service.list_facilities(session)
+
+
+@router.patch("/facilities/{facility_id}", response_model=FacilityView)
+def update_facility(facility_id: str, data: FacilityUpdate, session: Session = Depends(get_session)):
+    try:
+        return service.update_facility(session, facility_id, data)
+    except service.FacilityNotFound:
+        raise HTTPException(404, f"Facility {facility_id} not found")
+
+
+@router.post("/census/import", response_model=CensusImportReport)
+def import_census_file(file: UploadFile, session: Session = Depends(get_session)):
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Upload an .xlsx census workbook")
+    data = file.file.read(MAX_CENSUS_BYTES + 1)
+    if len(data) > MAX_CENSUS_BYTES:
+        raise HTTPException(413, "Census workbook is larger than 20 MB")
+    try:
+        sheets, skipped = census.parse_workbook(data)
+        report = census.import_census(session, sheets)  # single commit at the end
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(400, f"Census import failed: {e}")
+    report.skipped_sheets = skipped
+    return report
 
 
 @router.post("/beds", response_model=BedView, status_code=201)
