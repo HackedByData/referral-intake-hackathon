@@ -17,6 +17,10 @@
 
 **Guardrails:** a `must` pass (GEN-* included) with no verified quote forces needs_review (exclude passes exempt); fuzzy quote matches additionally require every number and negation token to appear on the page; any non-LLMError from a group call yields all-unknown for that group instead of crashing the run.
 
+**Number guard:** fuzzy matches extract numbers with a regex (so `98%` and `150ft` are checked) and require each to appear on the page; negation tokens are compared with trailing periods stripped.
+
+**Silent not_applicable:** a `must` rule whose text does not start with "If" that comes back `not_applicable` without verified evidence adds an `unverified_evidence` review reason (GEN-*, human-review and superseded rules exempt); MOB-3 and MOB-4 both `not_applicable` also forces review.
+
 **Status semantics:** always from the eligibility point of view (see `app/schemas.py` and `RULES_TASK`).
 
 **Testing:** `pytest tests/test_criteria.py tests/test_verify.py tests/test_tree.py tests/test_evaluate.py`.

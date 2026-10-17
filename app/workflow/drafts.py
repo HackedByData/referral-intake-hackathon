@@ -1,13 +1,18 @@
 """Deterministic message drafts for the coordinator to edit and send themselves. Never sent by this app."""
 from app.schemas import Recommendation, Rule, RuleResult
 
-HEADER = "DRAFT: not sent. Review and edit before sending.\n\n"
+GEN_IDS = ("GEN-1", "GEN-2", "GEN-3")
+HEADER ="DRAFT: not sent. Review and edit before sending.\n\n"
 
 
 def denial_draft(referral_id: str, recommendation: Recommendation, results: list[RuleResult],
-                 rules_by_id: dict[str, Rule], coordinator: str, notes: str) -> str:
+                 rules_by_id: dict[str, Rule], coordinator: str, notes: str,
+                 overridden_fail: frozenset[str] = frozenset()) -> str:
+    """`results` must already be the effective results (coordinator overrides applied); `overridden_fail` names
+    rules the coordinator set to fail, which may be cited without verified evidence."""
     failed = [r for r in results if r.status == "fail" and r.rule_id in rules_by_id
-              and rules_by_id[r.rule_id].kind in ("must", "exclude")]
+              and rules_by_id[r.rule_id].kind in ("must", "exclude") and r.rule_id not in GEN_IDS
+              and (any(e.verified for e in r.evidence) or r.rule_id in overridden_fail)]
     lines = [f"- {r.reasoning.strip()} (IHH admission criteria {r.rule_id})" for r in failed] or \
             ["- See coordinator notes."]
     body = (f"Re: Recuperative care referral {referral_id}\n\n"

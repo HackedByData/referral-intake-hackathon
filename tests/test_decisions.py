@@ -10,11 +10,11 @@ from app.beds import service
 from app.beds.models import Bed, Hold, Site
 from app.db import make_engine
 from app.rules.criteria import load_criteria
-from app.schemas import CoordinatorDecision, Drafts
+from app.schemas import AnalysisResult, CoordinatorDecision, Drafts, RuleOverride
 from app.workflow.decisions import DecisionError, apply_decision
 from app.workflow.kipu import MockKipuClient
 from app.workflow.models import Referral
-from tests.factories import make_analysis, make_bed_option
+from tests.factories import make_analysis, make_bed_option, make_result
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ def test_expired_hold_taken_by_other_referral_gives_409_and_keeps_status(setup):
     service.hold(s, "M1", "R9", ttl_hours=4)
     with pytest.raises(DecisionError) as e:
         apply_decision(s, "R1", approve(), load_criteria(), kipu)
-    assert e.value.status_code == 409 and "no longer available" in str(e.value)
+    assert e.value.status_code == 409 and "No bed is held for this referral" in str(e.value)
     assert s.get(Referral, "R1").status == "ready_for_review"
 
 
@@ -116,3 +116,59 @@ def test_approve_failure_compensates_and_can_be_retried(setup, tmp_path):
     assert [a for a in s.exec(select(Assignment)).all() if a.status == "active"] == []
     ref = apply_decision(s, "R1", approve(), load_criteria(), kipu)
     assert ref.status == "approved"
+
+
+def _set_results(s, results):
+    ref = s.get(Referral, "R1")
+    a = AnalysisResult.model_validate_json(ref.result_json)
+    ref.result_json = a.model_copy(update={"rule_results": results}).model_dump_json()
+    s.add(ref)
+    s.commit()
+
+
+def _denial(s, kipu, overrides=()):
+    ref = apply_decision(s, "R1", CoordinatorDecision(decision="deny", coordinator="C",
+                         rule_overrides=[RuleOverride(rule_id=i, status=st, note="n") for i, st in overrides]),
+                         load_criteria(), kipu)
+    return Drafts.model_validate_json(ref.drafts_json).denial
+
+
+def test_denial_does_not_cite_unverified_or_gen_fails(setup):
+    s, kipu = setup
+    _set_results(s, [make_result("MOB-3", "fail", verified=False), make_result("GEN-2", "fail"),
+                     make_result("MH-2", "fail")])
+    text = _denial(s, kipu)
+    assert "MH-2" in text and "MOB-3" not in text and "GEN-2" not in text
+
+
+def test_denial_skips_rule_overridden_to_pass(setup):
+    s, kipu = setup
+    _set_results(s, [make_result("MOB-3", "fail"), make_result("MH-2", "fail")])
+    text = _denial(s, kipu, [("MH-2", "pass")])
+    assert "MOB-3" in text and "MH-2" not in text
+
+
+def test_denial_cites_rule_overridden_to_fail_even_unverified(setup):
+    s, kipu = setup
+    _set_results(s, [make_result("MOB-3", "pass")])
+    text = _denial(s, kipu, [("MOB-3", "fail")])
+    assert "MOB-3" in text
+
+
+def test_kipu_rule_outcomes_reflect_overrides_and_stored_result_untouched(setup):
+    s, kipu = setup
+    _set_results(s, [make_result("MOB-3", "fail"), make_result("MH-2", "pass")])
+    ref = apply_decision(s, "R1", approve(rule_overrides=[RuleOverride(rule_id="MOB-3", status="pass", note="n")]),
+                         load_criteria(), kipu)
+    payload = Drafts.model_validate_json(ref.drafts_json).kipu_payload
+    assert payload["rule_outcomes"] == {"pass": 2}
+    stored = AnalysisResult.model_validate_json(ref.result_json)
+    assert [r.status for r in stored.rule_results] == ["fail", "pass"]
+
+
+def test_no_hold_no_bed_id_message(setup):
+    s, kipu = setup
+    service.release_hold(s, "R1")
+    with pytest.raises(DecisionError) as e:
+        apply_decision(s, "R1", approve(), load_criteria(), kipu)
+    assert e.value.status_code == 409 and "No bed is held for this referral" in str(e.value)

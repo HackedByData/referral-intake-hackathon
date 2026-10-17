@@ -324,7 +324,7 @@ interface AuditEventView {
       {"node": "general_eligibility", "outcome": "clear", "rule_ids": [], "explanation": "Meets at least one general admission criterion."},
       {"node": "human_review", "outcome": "clear", "rule_ids": [], "explanation": "No case-by-case judgment needed."},
       {"node": "missing_info", "outcome": "triggered", "rule_ids": ["INF-1", "OTH-3"], "explanation": "Information needed to decide is missing from the packet."},
-      {"node": "unverified", "outcome": "clear", "rule_ids": [], "explanation": "All failing findings are backed by verified quotes."},
+      {"node": "unverified", "outcome": "clear", "rule_ids": [], "explanation": "All findings are backed by verified quotes."},
       {"node": "conflicts", "outcome": "clear", "rule_ids": [], "explanation": "No contradictions affecting the decision."},
       {"node": "bed", "outcome": "clear", "rule_ids": [], "explanation": "Held bed demo-site-a-102-a."}
     ],

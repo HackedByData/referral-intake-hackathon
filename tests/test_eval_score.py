@@ -31,3 +31,27 @@ def test_error_and_no_truth_and_false_approve():
     assert "False approvals: 1" in md
     assert "| ERROR |" in md and "Errors: 1" in md
     assert "No ground truth: 1" in md
+
+
+def test_load_truth_malformed_exits_with_clear_message(tmp_path, capsys):
+    import pytest
+    from eval.run import load_truth
+    bad = tmp_path / "decisions.json"
+    bad.write_text("{not json", "utf-8")
+    with pytest.raises(SystemExit) as e:
+        load_truth(bad, rows_path=tmp_path / "rows.json")
+    assert e.value.code != 0
+    assert "rows.json" in capsys.readouterr().err
+
+
+def test_load_truth_ok(tmp_path):
+    from eval.run import load_truth
+    f = tmp_path / "d.json"
+    f.write_text('{"packets": [{"packet_id": "R01", "decision": "deny"}]}', "utf-8")
+    assert load_truth(f, rows_path=tmp_path / "rows.json") == {"R01": "deny"}
+
+
+def test_persist_rows_writes_file(tmp_path):
+    from eval.run import persist_rows
+    p = persist_rows([{"packet_id": "R01"}], tmp_path / "eval")
+    assert p.exists() and "R01" in p.read_text("utf-8")

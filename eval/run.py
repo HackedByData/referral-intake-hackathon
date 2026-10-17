@@ -10,6 +10,7 @@ Usage:
 import argparse
 import asyncio
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -77,6 +78,24 @@ def score(rows: list[dict], truth: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def persist_rows(rows: list[dict], out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "rows.json"
+    path.write_text(json.dumps(rows, indent=2), "utf-8")
+    return path
+
+
+def load_truth(path: Path, rows_path: Path) -> dict[str, str]:
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        return {p["packet_id"]: p["decision"] for p in data["packets"]}
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"Could not read decisions file {path}: {type(e).__name__}: {e}\n"
+              f"The pipeline results were saved to {rows_path}; fix the file and re-score from it.",
+              file=sys.stderr)
+        raise SystemExit(1)
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--packets-dir", required=True, type=Path)
@@ -104,8 +123,8 @@ async def main() -> None:
                         "seconds": 0.0}
 
     rows = await asyncio.gather(*(guarded(p) for p in pdfs))
-    truth_data = json.loads(args.decisions.read_text("utf-8"))  # read only now, after every review is done
-    truth = {p["packet_id"]: p["decision"] for p in truth_data["packets"]}
+    rows_path = persist_rows(rows, out_dir)  # saved first so a bad decisions file never loses the run
+    truth = load_truth(args.decisions, rows_path)  # read only now, after every review is done
     md = score(rows, truth)
     args.out.write_text(md, "utf-8")
     print(md)

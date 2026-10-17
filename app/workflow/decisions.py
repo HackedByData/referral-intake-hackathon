@@ -40,12 +40,16 @@ def apply_decision(session: Session, referral_id: str, decision: CoordinatorDeci
     ai = result.recommendation.decision
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     drafts = Drafts.model_validate_json(ref.drafts_json) if ref.drafts_json else Drafts()
+    by_override = {o.rule_id: o.status for o in decision.rule_overrides}
+    effective = [r.model_copy(update={"status": by_override[r.rule_id]}) if r.rule_id in by_override else r
+                 for r in result.rule_results]  # the stored AnalysisResult is left untouched
+    overridden_fail = frozenset(i for i, st in by_override.items() if st == "fail")
 
     if decision.decision == "approve":
         bed_id = decision.bed_id or beds.held_bed_id(session, referral_id)
         if bed_id is None:
-            raise DecisionError(409, "The held bed is no longer available (hold expired or released). "
-                                     "Choose a bed from bed-matches.")
+            raise DecisionError(409, "No bed is held for this referral (it may have expired or the AI "
+                                     "recommended deny). Choose a bed from bed-matches and pass bed_id.")
         try:
             assignment = beds.assign(session, bed_id, referral_id, client_label=referral_id)
         except (beds.BedUnavailable, beds.BedNotFound) as e:
@@ -56,7 +60,7 @@ def apply_decision(session: Session, referral_id: str, decision: CoordinatorDeci
             draft = KipuAdmissionDraft(
                 referral_id=referral_id, bed=bed, admitting_diagnosis=result.summary.admitting_diagnosis,
                 summary=result.summary.one_liner, ai_recommendation=ai,
-                rule_outcomes=dict(Counter(r.status for r in result.rule_results)),
+                rule_outcomes=dict(Counter(r.status for r in effective)),
                 approved_by=decision.coordinator, approved_at=now)
             drafts.kipu_payload = draft.model_dump(mode="json")
             drafts.kipu_reference = kipu.create_admission(draft)
@@ -72,8 +76,8 @@ def apply_decision(session: Session, referral_id: str, decision: CoordinatorDeci
                 log.exception("Could not re-hold bed %s for %s after rollback", bed_id, referral_id)
             raise DecisionError(500, f"Approval failed and was rolled back: {e}")
     elif decision.decision == "deny":
-        drafts.denial = denial_draft(referral_id, result.recommendation, result.rule_results, criteria.by_id(),
-                                     decision.coordinator, decision.notes)
+        drafts.denial = denial_draft(referral_id, result.recommendation, effective, criteria.by_id(),
+                                     decision.coordinator, decision.notes, overridden_fail)
         beds.release_hold(session, referral_id)
         ref.status = "denied"
         record = _finish(session, ref, decision, ai, drafts, now)

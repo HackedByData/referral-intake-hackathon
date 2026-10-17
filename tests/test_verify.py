@@ -58,3 +58,23 @@ def test_fuzzy_rejects_flipped_number():
 
 def test_fuzzy_rejects_flipped_negation():
     assert not quote_on_page("patient is not suicidal today", "patient is suicidal today per note")
+
+
+PCT_PAGE = "Vitals: O2 sat 88% on room air. Patient ambulated 15 ft with walker. Denies chest pain."
+
+
+def test_fuzzy_rejects_flipped_percentage():
+    assert not quote_on_page("O2 sat 98% on room air", PCT_PAGE)
+
+
+def test_fuzzy_rejects_number_glued_to_unit():
+    assert not quote_on_page("ambulated 150ft with walker", PCT_PAGE)
+
+
+def test_fuzzy_rejects_number_with_trailing_period():
+    assert not quote_on_page("O2 sat was 94%. on room air", PCT_PAGE)
+
+
+def test_fuzzy_negation_with_trailing_period_must_survive():
+    assert not quote_on_page("Patient reports no chest pain at all.", "Patient reports chest pain at all today")
+    assert quote_on_page("Patient denies chest pain.", "Patient denies chest pain. Plan follow up")

@@ -99,7 +99,15 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     # ...and an approve can never rest on a passing 'must' finding (GEN-* included) without a verified quote.
     unverified_pass = [r for r in res.values() if kind[r.rule_id] == "must" and r.rule_id not in human
                        and r.status == "pass" and not _verified(r)]
-    steps.append(_step("unverified", unverified + unverified_pass,
+    # ...and an unconditional 'must' rule can't silently be "not applicable" without evidence.
+    silent_na = [r for r in res.values() if kind[r.rule_id] == "must" and r.rule_id not in human
+                 and r.rule_id not in GEN_IDS and meta[r.rule_id].superseded_by is None
+                 and r.status == "not_applicable" and not _verified(r)
+                 and not meta[r.rule_id].text.strip().lower().startswith("if")]
+    mob_both_na = all(i in res and res[i].status == "not_applicable" for i in ("MOB-3", "MOB-4"))
+    unv_ids = list(dict.fromkeys([r.rule_id for r in unverified + unverified_pass + silent_na]
+                                 + (["MOB-3", "MOB-4"] if mob_both_na else [])))
+    steps.append(_step("unverified", unv_ids,
                        "All findings are backed by verified quotes.",
                        "A finding could not be matched to the packet text; check it by hand."))
     for r in unverified:
@@ -108,6 +116,12 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     for r in unverified_pass:
         reasons.append(ReviewReason(kind="unverified_evidence", rule_ids=[r.rule_id],
                                     detail=f"{_first_sentence(r.reasoning)} (passing finding not matched to the packet)"))
+    for r in silent_na:
+        reasons.append(ReviewReason(kind="unverified_evidence", rule_ids=[r.rule_id],
+                                    detail="Marked not applicable without evidence; this rule always applies."))
+    if mob_both_na:
+        reasons.append(ReviewReason(kind="unverified_evidence", rule_ids=["MOB-3", "MOB-4"],
+                                    detail="Neither mobility rule was applied."))
 
     # 7. conflicts touching anything flagged
     flagged = {r.rule_id for r in excl + must_fail + human_hits + missing + unverified}
@@ -135,7 +149,8 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     if decision == "deny":
         hits = excl + must_fail or gen
         top = [_reason_line(r) for r in hits][:3]
-        headline = f"Recommend deny: {len(excl) + len(must_fail) or 1} criterion not met"
+        n = len(excl) + len(must_fail) or 1
+        headline = f"Recommend deny: {n} {'criterion' if n == 1 else 'criteria'} not met"
     elif decision == "needs_review":
         top = [f"{rr.detail} [{', '.join(rr.rule_ids)}]" if rr.rule_ids else rr.detail for rr in reasons][:3]
         headline = f"Needs review: {len(reasons)} item(s) to resolve before deciding"

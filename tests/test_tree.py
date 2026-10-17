@@ -144,3 +144,40 @@ def test_unverified_exclude_pass_still_approves():
     res[4] = make_result("MH-2", "pass", verified=False)
     rec = decide(RULES, res, make_summary(), BEDS)
     assert rec.decision == "approve"
+
+
+def _with_text(rule, text):
+    return rule.model_copy(update={"text": text})
+
+
+def test_unconditional_must_not_applicable_needs_review():
+    rules = RULES + [make_rule("ADL-1", "must")]
+    rs = results() + [make_result("ADL-1", "not_applicable")]
+    rec = decide(rules, rs, make_summary(), BEDS)
+    assert rec.decision == "needs_review"
+    rr = [r for r in rec.review_reasons if r.rule_ids == ["ADL-1"]]
+    assert rr and rr[0].kind == "unverified_evidence" and "always applies" in rr[0].detail
+    assert node(rec, "unverified").rule_ids == ["ADL-1"]
+
+
+def test_conditional_text_must_not_applicable_still_approves():
+    rules = RULES + [_with_text(make_rule("DME-1", "must"), "If using DME, must have it")]
+    rs = results() + [make_result("DME-1", "not_applicable")]
+    assert decide(rules, rs, make_summary(), BEDS).decision == "approve"
+
+
+def test_mob3_and_mob4_both_not_applicable_needs_review():
+    rules = [_with_text(r, "If ambulatory, walks 150 ft") if r.id == "MOB-3" else r for r in RULES]
+    rules.append(_with_text(make_rule("MOB-4", "must"), "If wheelchair, must transfer"))
+    rs = results(MOB_3="not_applicable") + [make_result("MOB-4", "not_applicable")]
+    rec = decide(rules, rs, make_summary(), BEDS)
+    assert rec.decision == "needs_review"
+    assert any(r.rule_ids == ["MOB-3", "MOB-4"] and r.detail == "Neither mobility rule was applied."
+               for r in rec.review_reasons)
+
+
+def test_deny_headline_grammar():
+    rec = decide(RULES, results(MH_2="fail"), make_summary(), BEDS)
+    assert rec.headline == "Recommend deny: 1 criterion not met"
+    rec2 = decide(RULES, results(MH_2="fail", MOB_3="fail"), make_summary(), BEDS)
+    assert rec2.headline == "Recommend deny: 2 criteria not met"

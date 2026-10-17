@@ -27,9 +27,12 @@ def quote_on_page(quote: str, page_md: str) -> bool:
     if len(q) < MIN_FUZZY_LEN:
         return False
     # Fuzzy path only: numbers and negations must survive exactly, or the meaning may have flipped.
-    page_tokens = set(text.split())
+    page_nums = set(_NUM.findall(text))
+    if not set(_NUM.findall(q)) <= page_nums:
+        return False
+    page_tokens = {t.strip(".") for t in text.split()}
     for tok in q.split():
-        if (_NUM.fullmatch(tok) or tok in NEGATIONS) and tok not in page_tokens:
+        if tok.strip(".") in NEGATIONS and tok.strip(".") not in page_tokens:
             return False
     return fuzz.partial_ratio(q, text) >= FUZZY_THRESHOLD
 

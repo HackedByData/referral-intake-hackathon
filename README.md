@@ -27,7 +27,7 @@ The frontend is being built separately in Claude Design against `docs/api-contra
 - **Built with Claude.** Claude Code wrote the backend from a design spec and an implementation plan in this repo (`docs/superpowers/`).
 - **Inside the tool, model `claude-opus-5-5` via the Anthropic SDK** (all calls go through `app/llm.py`):
   - Per-page vision transcription (effort low): each PDF page is rendered and transcribed to markdown, with orientation and legibility noted.
-  - One case-summary call plus 8 parallel rule-group calls (effort high). The groups share a cached packet prefix, so the packet is read once and billed at the cached rate afterwards. Each rule gets a status, a confidence and a verbatim quote with its page.
+  - One case-summary call plus 8 parallel rule-group calls (effort high). The groups share a packet prefix that is marked for prompt caching. Each rule gets a status, a confidence and a verbatim quote with its page.
   - Structured outputs for every call, and explicit refusal handling.
 - **Deterministic code, not Claude, makes the call.** `app/rules/verify.py` checks that every quote really appears on the cited page. `app/rules/tree.py` walks the decision tree: exclusions, must-haves, general eligibility, human review, missing information, unverified evidence, conflicts, then bed. A deny needs verified evidence, and one rule (OTH-2) never denies on its own.
 - **What a person checks.**
@@ -40,7 +40,7 @@ The frontend is being built separately in Claude Design against `docs/api-contra
 
 ```bash
 git clone <this repo> && cd referral-intake-hackathon
-python -m venv .venv
+python -m venv .venv                              # macOS/Linux: python3 -m venv .venv
 .venv/Scripts/pip install -r requirements.txt     # macOS/Linux: .venv/bin/pip
 cp .env.example .env                              # then set ANTHROPIC_API_KEY in .env
 .venv/Scripts/uvicorn app.main:app --port 8000    # macOS/Linux: .venv/bin/uvicorn
@@ -56,7 +56,7 @@ Eval against IHH's decisions for the 11 real packets (needs `ANTHROPIC_API_KEY`)
 .venv/Scripts/python -m eval.run --packets-dir ../claude-impact-lab-oc/challenges/1-referral-intake/packets --decisions ../claude-impact-lab-oc/challenges/1-referral-intake/eval/decisions.json
 ```
 
-Needs: Python 3 with `venv` and pip, and an Anthropic API key. Settings live in `.env` (see `.env.example`); no keys are in the repo. The packets must be downloaded separately per the event repo and are never committed here. Demo beds are seeded on first start; generated data goes to `data/` (gitignored).
+Needs: Python 3.10+ (tested on 3.14) with `venv` and pip, and an Anthropic API key. Settings live in `.env` (see `.env.example`); no keys are in the repo. The packets must be downloaded separately per the event repo and are never committed here. Demo beds are seeded on first start; generated data goes to `data/` (gitignored).
 
 ## What is real and what is mocked
 

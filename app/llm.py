@@ -62,6 +62,11 @@ class StructuredLLM:
             if response.stop_reason == "max_tokens":
                 raise LLMError("Model output was truncated (max_tokens)")
             if response.parsed_output is not None:
+                usage = getattr(response, "usage", None)
+                log.info("claude usage: in=%s out=%s cache_read=%s cache_write=%s",
+                         getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None),
+                         getattr(usage, "cache_read_input_tokens", None),
+                         getattr(usage, "cache_creation_input_tokens", None))
                 return response.parsed_output
             last_error = LLMError("Model returned no structured output")
         raise LLMError(f"Structured output failed after retry: no structured output ({last_error})")
