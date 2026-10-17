@@ -22,3 +22,7 @@ node_modules/
 data/
 *.sqlite
 *.db
+
+# Agent workspace scratch
+.superpowers/
+.claude/worktrees/
