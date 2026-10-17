@@ -1,6 +1,6 @@
 # API contract (frontend ↔ backend)
 
-**Status:** v1, frozen for the hackathon (2026-10-17). Backend field names match `app/schemas.py` exactly.
+**Status:** v2 (2026-10-17), additive over v1. Backend field names match `app/schemas.py` exactly.
 Changes will be announced and added to the changelog at the bottom.
 
 Base URL (local): `http://localhost:8000`. Interactive docs once the server runs: `http://localhost:8000/docs`.
@@ -63,6 +63,11 @@ The coordinator always makes the final call. The AI decision is a recommendation
 | POST | `/api/beds` | `BedCreate` | `201 BedView` |
 | PATCH | `/api/beds/{bed_id}` | `BedUpdate` | `BedView` · `404` |
 | POST | `/api/beds/import` | multipart `file` (.csv or .xlsx) | `BedImportReport` |
+| GET | `/api/beds/{bed_id}` | | `BedDetail` (bed + current stay with patient info + history) · `404` |
+| GET | `/api/facilities` | | `FacilityView[]` |
+| PATCH | `/api/facilities/{id}` | `FacilityUpdate` | `FacilityView` · `404` |
+| POST | `/api/census/import` | multipart `file` (IHH census .xlsx) | `CensusImportReport` · `400` |
+| POST | `/api/referrals/{id}/county` | `CountyConfirm` | `ReferralView` · `404` · `409` |
 | GET | `/api/assignments` | `?active=true` (default) | `AssignmentView[]` |
 | POST | `/api/assignments/{id}/discharge` | | `AssignmentView` · `404` |
 | GET | `/api/audit` | `?referral_id=` | `AuditEventView[]` (oldest first) |
@@ -86,7 +91,8 @@ type RuleStatus = "pass" | "fail" | "unknown" | "not_applicable" | "needs_human"
 type RuleKind = "must" | "exclude" | "document" | "conditional" | "ask" | "note" | "eligible";
 type RuleSource = "outline" | "by_system" | "form" | "checklist";
 type Confidence = "high" | "medium" | "low";
-type BedStatus = "available" | "held" | "occupied" | "out_of_service";
+type BedStatus = "available" | "held" | "occupied" | "needs_cleaning" | "out_of_service";
+type ProgramType = "recuperative_care" | "project_roomkey" | "shelter" | "other" | "unknown";
 type SexDesignation = "male" | "female" | "any";
 
 // ---------- Referral ----------
@@ -105,7 +111,18 @@ interface ReferralView extends ReferralListItem {
   one_liner?: string;
   recommendation?: Recommendation;
   coordinator_decision?: CoordinatorDecisionRecord;
+  county?: CountySuggestion;              // v2: county used for bed matching
 }
+
+interface CountySuggestion {             // v2, system-filled
+  county?: string;                       // null = unknown → no bed held, review reason "county_needed"
+  candidates: string[];                  // e.g. ["Riverside","San Bernardino"] for a multi-county plan
+  basis: string;                         // e.g. "Health plan 'CalOptima' (p.3) serves Orange County"
+  confirmed: boolean;                    // true once a coordinator confirmed/overrode it
+  confirmed_by?: string;
+}
+
+interface CountyConfirm { county: string; coordinator: string; }   // v2
 
 interface Recommendation {
   decision: Decision;
@@ -119,7 +136,7 @@ interface Recommendation {
 }
 
 interface ReviewReason {
-  kind: "missing_info" | "judgment_call" | "unverified_evidence" | "conflict" | "no_bed";
+  kind: "missing_info" | "judgment_call" | "unverified_evidence" | "conflict" | "no_bed" | "county_needed";
   rule_ids: string[];
   detail: string;
 }
@@ -252,6 +269,40 @@ interface BedView {
   referral_id?: string;                  // holder or occupant
   assignment_id?: number;                // when occupied via the system (use for discharge)
   hold_expires_at?: string;
+  site_id: string;                       // v2
+  county?: string;                       // v2 (facility county)
+  program_type: ProgramType;             // v2
+  stay?: StaySummary;                    // v2: current occupant summary
+}
+
+interface StaySummary {                  // v2
+  assignment_id: number; source: "referral" | "census" | "seed"; referral_id?: string;
+  client_id?: string; first_name?: string; last_name?: string; gender?: string;
+  intake_date?: string; expected_exit_date?: string; payer?: string;
+}
+
+interface StayDetail extends StaySummary { // v2: the "patient info" section of a bed
+  status: "active" | "released"; exit_date?: string; case_manager?: string; notes: string;
+  extra: Record<string, unknown>;        // every other census column, verbatim (pets, ICMS, ECM, VI-SPDAT, phone, ...)
+  released_at?: string;
+}
+
+interface BedDetail { bed: BedView; current_stay?: StayDetail; history: StaySummary[]; }   // v2
+
+interface FacilityView {                 // v2: one per census sheet
+  id: string; name: string; county?: string; program_type: ProgramType;
+  address: string; phone: string; notes: string; active: boolean;
+  total_beds: number; available_beds: number;
+}
+
+interface FacilityUpdate {               // v2: all optional
+  county?: string; program_type?: ProgramType; address?: string; phone?: string; notes?: string; active?: boolean;
+}
+
+interface CensusImportReport {           // v2
+  facilities_created: number; skipped_sheets: string[];
+  sheets: { sheet: string; facility_id?: string; beds_created: number; beds_updated: number;
+            stays_created: number; stays_closed: number; skipped: string[]; conflicts: string[] }[];
 }
 
 interface BedCreate {
@@ -371,6 +422,14 @@ interface AuditEventView {
 - `POST /api/beds/import` never fails the whole file for a bad row. Each problem row appears in `errors[]` as `"row N: ..."`. Show them.
 - A passing finding whose quote couldn't be matched to the packet shows up as a `review_reasons[]` item of kind `unverified_evidence` and makes the decision `needs_review`. That's intentional (guardrail).
 
+## 8. County-aware matching and the bed board (v2)
+
+- Each **facility** (one census sheet) has a `county` and a `program_type`. Referrals only match **active, `recuperative_care` facilities in the patient's county**. Facilities with unknown county never match. POC data uses placeholder counties/programs (facility `notes` say so). Let staff edit them via `PATCH /api/facilities/{id}`.
+- **Patient county**: the AI extracts the health plan (with a cited quote); code maps single-county plans (CalOptima → Orange, L.A. Care → Los Angeles). Show `ReferralView.county.basis` and a county picker. If `county` is null, the review card shows `county_needed` and no bed is held. `POST /api/referrals/{id}/county` confirms/overrides; the response has the newly held bed.
+- **Bed board**: group `GET /api/beds` by `site`, color by `status` (`needs_cleaning` is new), show `stay` summary. Clicking a bed → `GET /api/beds/{id}` for the **patient info** section (`current_stay.extra`).
+- **Census import**: `POST /api/census/import` with IHH's workbook; show the per-sheet report (skipped rows and conflicts). Re-importing is safe.
+
 ## Changelog
 - v1 (2026-10-17): initial contract.
+- v2 (2026-10-17): census-backed BMS + county matching (additive): facilities endpoints, bed detail with patient info, census import, county confirm, `needs_cleaning` bed status, `county_needed` review reason, `ReferralView.county`, `BedView.site_id/county/program_type/stay`, `BedSummary.needs_cleaning`. See §8.
 - v1.1 (2026-10-17): behaviour notes (§7) from code review: nulls, button disabling, 409/404/500 cases, per-row import errors, unverified-evidence reviews. No field or route changes.
