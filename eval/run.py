@@ -27,6 +27,10 @@ EVAL_BED = [BedOption(bed_id="EVAL", site="eval", room="-", label="-", match_not
 
 
 def outcome(truth: str, ours: str) -> str:
+    if ours == "error":
+        return "ERROR"
+    if truth not in ("approve", "deny"):
+        return "no ground truth"
     if ours == "needs_review":
         return f"review (IHH {'approved' if truth == 'approve' else 'denied'})"
     if ours == truth:
@@ -58,7 +62,8 @@ def score(rows: list[dict], truth: dict[str, str]) -> str:
              "Rule IDs only; no packet content.\n",
              "| Packet | IHH | Ours | Outcome | Deciding rules | Review items | Seconds |",
              "|---|---|---|---|---|---|---|"]
-    counts = {"match": 0, "FALSE APPROVE": 0, "false deny": 0, "review": 0}
+    counts = {"match": 0, "FALSE APPROVE": 0, "false deny": 0, "review": 0, "ERROR": 0,
+              "no ground truth": 0}
     for r in sorted(rows, key=lambda x: x["packet_id"]):
         t = truth.get(r["packet_id"], "?")
         o = outcome(t, r["decision"])
@@ -67,7 +72,8 @@ def score(rows: list[dict], truth: dict[str, str]) -> str:
                      f"| {', '.join(r['review_rules'][:8]) or '-'} | {r['seconds']} |")
     lines += ["", f"Matches: {counts['match']} / {len(rows)}",
               f"False approvals: {counts['FALSE APPROVE']} (worst error: we approved, IHH denied)",
-              f"False denials: {counts['false deny']}", f"Needs review: {counts['review']}"]
+              f"False denials: {counts['false deny']}", f"Needs review: {counts['review']}",
+              f"Errors: {counts['ERROR']}", f"No ground truth: {counts['no ground truth']}"]
     return "\n".join(lines) + "\n"
 
 
@@ -81,7 +87,8 @@ async def main() -> None:
     args = ap.parse_args()
     pdfs = sorted(args.packets_dir.glob("R*.pdf"))
     if args.only:
-        pdfs = [p for p in pdfs if p.stem in set(args.only.split(","))]
+        wanted = {s.strip() for s in args.only.split(",")}
+        pdfs = [p for p in pdfs if p.stem in wanted]
     out_dir = get_settings().data_dir / "eval"
     out_dir.mkdir(parents=True, exist_ok=True)
     llm, criteria = StructuredLLM(), load_criteria()
@@ -89,7 +96,12 @@ async def main() -> None:
 
     async def guarded(p: Path):
         async with sem:
-            return await run_one(p, llm, criteria, out_dir)
+            try:
+                return await run_one(p, llm, criteria, out_dir)
+            except Exception as e:
+                print(f"{p.stem}: ERROR {type(e).__name__}: {e}")
+                return {"packet_id": p.stem, "decision": "error", "deciding_rules": [], "review_rules": [],
+                        "seconds": 0.0}
 
     rows = await asyncio.gather(*(guarded(p) for p in pdfs))
     truth_data = json.loads(args.decisions.read_text("utf-8"))  # read only now, after every review is done
