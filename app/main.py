@@ -33,7 +33,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="IHH Referral Intake (prototype)", lifespan=lifespan)
+app = FastAPI(title="Raft: IHH referral intake (prototype)", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(referrals_api.router)
 app.include_router(beds_api.router)

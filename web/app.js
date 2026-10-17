@@ -1,4 +1,4 @@
-/* IHH Referral Intake frontend. Plain JS, no build step. Talks to the API in docs/api-contract.md.
+/* Raft frontend (IHH referral intake). Plain JS, no build step. Talks to the API in docs/api-contract.md.
    Steps: 1 Upload -> 2 Check results (three tables, each Confirm / Edit) -> 3 Decide. Plus the bed board. */
 "use strict";
 

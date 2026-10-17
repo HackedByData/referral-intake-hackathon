@@ -1,4 +1,8 @@
-# IHH Referral Intake
+<img src="web/raft.svg" alt="Raft logo" width="96">
+
+# Raft
+
+Referral intake and bed management for Illumination Health + Home (IHH) recuperative care.
 
 > For IHH referral coordinators: upload a faxed referral packet, get a cited recommendation and a held bed in minutes, and decide with one click.
 

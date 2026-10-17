@@ -1,4 +1,4 @@
-# Coordinator UI (`web/`)
+# Raft coordinator UI (`web/`)
 
 **Purpose:** the screens a coordinator uses. Plain HTML/CSS/JS, no build step. FastAPI serves it at `/`
 (`app/main.py` mounts `web/` after the API routers), so run the API and open `http://localhost:8000/`.

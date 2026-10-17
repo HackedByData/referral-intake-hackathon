@@ -17,7 +17,7 @@ then `docs/superpowers/plans/2026-10-17-referral-intake.md`. Module notes are in
 
 ## Working here
 - Python venv: `.venv`. Run tests: `.venv/Scripts/python -m pytest -q`. Run API: `.venv/Scripts/uvicorn app.main:app --reload`.
-- Coordinator UI: `web/` (plain JS, served at `http://localhost:8000/`; `/?demo=1` for invented sample referrals). See `docs/modules/frontend.md`.
+- Product name: **Raft** (logo `web/raft.svg`). Coordinator UI: `web/` (plain JS, served at `http://localhost:8000/`; `/?demo=1` for invented sample referrals). See `docs/modules/frontend.md`.
 - Shared types: `app/schemas.py`. Rule IDs come from `criteria/admission-criteria.json`.
 - Model: `claude-opus-5-5` via `app/llm.py` only (adaptive thinking, explicit effort, refusal handling).
 - When criteria are unclear or sources disagree, surface it to the coordinator. Don't pick silently.
