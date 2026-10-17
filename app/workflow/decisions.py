@@ -1,4 +1,5 @@
 """Apply a coordinator's final decision: transactional bed assignment, drafts, mock Kipu, audit."""
+import logging
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -13,6 +14,7 @@ from app.workflow.drafts import denial_draft, info_request_draft
 from app.workflow.kipu import KipuAdmissionDraft, KipuClient, MockKipuClient
 from app.workflow.models import Referral
 
+log = logging.getLogger(__name__)
 DECIDABLE = ("ready_for_review", "info_requested")
 AGREES = {"approve": "approve", "deny": "deny", "request_info": "needs_review"}
 
@@ -45,35 +47,53 @@ def apply_decision(session: Session, referral_id: str, decision: CoordinatorDeci
             raise DecisionError(409, "The held bed is no longer available (hold expired or released). "
                                      "Choose a bed from bed-matches.")
         try:
-            beds.assign(session, bed_id, referral_id, client_label=referral_id)
+            assignment = beds.assign(session, bed_id, referral_id, client_label=referral_id)
         except (beds.BedUnavailable, beds.BedNotFound) as e:
             raise DecisionError(409, f"Bed {bed_id} is no longer available. Choose another bed. ({e})")
-        bed = beds.bed_option(session, session.get(beds.Bed, bed_id))
-        draft = KipuAdmissionDraft(
-            referral_id=referral_id, bed=bed, admitting_diagnosis=result.summary.admitting_diagnosis,
-            summary=result.summary.one_liner, ai_recommendation=ai,
-            rule_outcomes=dict(Counter(r.status for r in result.rule_results)),
-            approved_by=decision.coordinator, approved_at=now)
-        drafts.kipu_payload = draft.model_dump(mode="json")
-        drafts.kipu_reference = kipu.create_admission(draft)
-        ref.status = "approved"
+        assignment_id = assignment.id
+        try:  # assign has committed; compensate if anything below fails
+            bed = beds.bed_option(session, session.get(beds.Bed, bed_id))
+            draft = KipuAdmissionDraft(
+                referral_id=referral_id, bed=bed, admitting_diagnosis=result.summary.admitting_diagnosis,
+                summary=result.summary.one_liner, ai_recommendation=ai,
+                rule_outcomes=dict(Counter(r.status for r in result.rule_results)),
+                approved_by=decision.coordinator, approved_at=now)
+            drafts.kipu_payload = draft.model_dump(mode="json")
+            drafts.kipu_reference = kipu.create_admission(draft)
+            ref.status = "approved"
+            record = _finish(session, ref, decision, ai, drafts, now)
+        except Exception as e:
+            log.exception("Approval of %s failed after bed assignment; compensating", referral_id)
+            session.rollback()
+            beds.discharge(session, assignment_id)
+            try:
+                beds.hold(session, bed_id, referral_id, get_settings().hold_ttl_hours)
+            except Exception:
+                log.exception("Could not re-hold bed %s for %s after rollback", bed_id, referral_id)
+            raise DecisionError(500, f"Approval failed and was rolled back: {e}")
     elif decision.decision == "deny":
-        beds.release_hold(session, referral_id)
         drafts.denial = denial_draft(referral_id, result.recommendation, result.rule_results, criteria.by_id(),
                                      decision.coordinator, decision.notes)
+        beds.release_hold(session, referral_id)
         ref.status = "denied"
+        record = _finish(session, ref, decision, ai, drafts, now)
     else:
         drafts.info_request = info_request_draft(referral_id, result.recommendation, decision.coordinator,
                                                  decision.notes)
         ref.status = "info_requested"
-
-    record = CoordinatorDecisionRecord(**decision.model_dump(), decided_at=now, ai_recommendation=ai,
-                                       agreed_with_ai=AGREES[decision.decision] == ai)
-    ref.decision_json, ref.drafts_json, ref.updated_at = record.model_dump_json(), drafts.model_dump_json(), now
-    session.add(ref)
-    session.commit()
+        record = _finish(session, ref, decision, ai, drafts, now)
     audit.record(session, "coordinator_decision", actor=decision.coordinator, referral_id=referral_id,
                  decision=decision.decision, ai_recommendation=ai, agreed_with_ai=record.agreed_with_ai,
                  overrides=[o.model_dump() for o in decision.rule_overrides], notes=decision.notes)
     session.refresh(ref)
     return ref
+
+
+def _finish(session: Session, ref: Referral, decision: CoordinatorDecision, ai: str, drafts: Drafts,
+            now: datetime) -> CoordinatorDecisionRecord:
+    record = CoordinatorDecisionRecord(**decision.model_dump(), decided_at=now, ai_recommendation=ai,
+                                       agreed_with_ai=AGREES[decision.decision] == ai)
+    ref.decision_json, ref.drafts_json, ref.updated_at = record.model_dump_json(), drafts.model_dump_json(), now
+    session.add(ref)
+    session.commit()
+    return record

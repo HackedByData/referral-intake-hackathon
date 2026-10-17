@@ -98,3 +98,21 @@ def test_unknown_referral_404(setup):
     with pytest.raises(DecisionError) as e:
         apply_decision(s, "NOPE", approve(), load_criteria(), kipu)
     assert e.value.status_code == 404
+
+
+class ExplodingKipu:
+    def create_admission(self, draft):
+        raise OSError("disk full")
+
+
+def test_approve_failure_compensates_and_can_be_retried(setup, tmp_path):
+    from app.beds.models import Assignment
+    s, kipu = setup
+    with pytest.raises(DecisionError) as e:
+        apply_decision(s, "R1", approve(), load_criteria(), ExplodingKipu())
+    assert e.value.status_code == 500 and "rolled back" in str(e.value)
+    assert service.held_bed_id(s, "R1") == "M1"
+    assert s.get(Referral, "R1").status == "ready_for_review"
+    assert [a for a in s.exec(select(Assignment)).all() if a.status == "active"] == []
+    ref = apply_decision(s, "R1", approve(), load_criteria(), kipu)
+    assert ref.status == "approved"
