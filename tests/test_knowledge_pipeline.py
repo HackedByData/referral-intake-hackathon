@@ -39,7 +39,8 @@ async def fake_transcribe(llm, pdf_path, cache_root, concurrency=8, on_progress=
 
 def make_pipeline(engine, plan="CalOptima", seen=None):
     async def summarize(llm, packet, criteria):
-        return make_summary(health_plan=plan, health_plan_evidence=[Evidence(page=4, quote=f"Health plan: {plan}")])
+        s = make_summary(health_plan=plan, health_plan_evidence=[Evidence(page=4, quote=f"Health plan: {plan}")])
+        return s.model_copy(update={"bed_needs": s.bed_needs.model_copy(update={"county": None})})  # model never fills it
 
     async def evaluate_rules(llm, packet, criteria, concurrency=8, guidance=None):
         if seen is not None:

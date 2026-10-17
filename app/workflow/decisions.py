@@ -96,7 +96,8 @@ def apply_decision(session: Session, referral_id: str, decision: CoordinatorDeci
                  decision=decision.decision, ai_recommendation=ai, agreed_with_ai=record.agreed_with_ai,
                  overrides=[o.model_dump() for o in decision.rule_overrides], notes=decision.notes)
     try:  # lessons are proposed only after the decision is safely committed; never break the decision
-        capture.from_decision(session, referral_id, result, decision, chosen_bed_id, held_before, criteria)
+        capture.from_decision(session, referral_id, result, decision, chosen_bed_id, held_before, criteria,
+                             record.agreed_with_ai)
     except Exception:
         log.exception("Lesson capture failed for %s; decision unaffected", referral_id)
         session.rollback()

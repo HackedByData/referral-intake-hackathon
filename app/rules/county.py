@@ -30,6 +30,12 @@ def _match_key(plan: str, plan_map: dict[str, list[str]]) -> str | None:
     return max(hits, key=lambda k: len(normalize(k))) if hits else None  # longest key wins
 
 
+def builtin_plan_counties(plan: str) -> list[str] | None:
+    """Counties the BUILT-IN map lists for this plan name, or None if the plan is not in it."""
+    key = _match_key(plan, load_plan_map()) if plan.strip() else None
+    return None if key is None else load_plan_map()[key]
+
+
 def merge_plan_map(base: dict[str, list[str]], additions: dict[str, list[str]]) -> dict[str, list[str]]:
     """Learned mappings replace built-in keys that normalize the same way."""
     drop = {normalize(k) for k in additions}

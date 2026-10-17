@@ -178,21 +178,25 @@ def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Dep
     basis = f"Confirmed by {body.coordinator}" + (f"; AI suggestion: {ai_basis}" if ai_basis else "")
     summary = result.summary.model_copy(update={
         "suggested_county": old.model_copy(update={"county": county, "confirmed": True,
-                                                   "confirmed_by": body.coordinator, "basis": basis}),
+                                                   "confirmed_by": body.coordinator, "basis": basis,
+                                                   "ai_county": capture.effective_ai_county(old)}),
         "bed_needs": result.summary.bed_needs.model_copy(update={"county": county})})
     beds.release_hold(session, referral_id)
     criteria = load_criteria()
     options = beds.find_matches(session, summary.bed_needs, limit=10, for_referral=referral_id)
-    used = list(result.knowledge_used)  # lessons already used by the analysis (guidance, county) still apply
+    # Rule-guidance lessons used by the analysis still apply; the county lesson only if its county was confirmed.
+    inherited = knowledge.inherited_ids(session, result.knowledge_used, county)
+    new_ids: list[int] = []
     profile = build_profile(result.model_copy(update={"summary": summary}), criteria.rules)
     precedent_list = []
     try:
         options, bed_ids = knowledge.rerank_beds(session, options, profile)
         precedent_list = knowledge.precedents(session, profile)
-        used += bed_ids + [p.lesson_id for p in precedent_list]
+        new_ids = bed_ids + [p.lesson_id for p in precedent_list]
     except Exception:
         log.exception("Knowledge re-rank failed for %s; using default bed order", referral_id)
     rec = decide_tree(criteria.rules, result.rule_results, summary, options[:3])
+    used = sorted(set(inherited) | set(new_ids))
     rec = knowledge.attach(rec, precedent_list, used)
     if rec.held_bed:
         try:
@@ -201,7 +205,7 @@ def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Dep
             rec = rec.model_copy(update={"held_bed": None, "review_reasons": rec.review_reasons + [
                 ReviewReason(kind="no_bed", rule_ids=[], detail="Matched bed was taken before it could be held.")]})
     result = result.model_copy(update={"summary": summary, "recommendation": rec, "profile": profile,
-                                       "knowledge_used": sorted(set(used))})
+                                       "knowledge_used": used})
     ref.result_json = result.model_dump_json()
     ref.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(ref)
@@ -209,7 +213,7 @@ def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Dep
     audit.record(session, "county_confirmed", actor=body.coordinator, referral_id=referral_id, county=county,
                  held_bed=rec.held_bed.bed_id if rec.held_bed else None)
     try:
-        knowledge_store.mark_applied(session, result.knowledge_used)
+        knowledge_store.mark_applied(session, new_ids)  # inherited lessons were counted when first applied
     except Exception:
         log.exception("Could not record lesson usage for %s", referral_id)
         session.rollback()

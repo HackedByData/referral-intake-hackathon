@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from app.beds.models import Bed
 from app.knowledge import store
+from app.knowledge.models import Lesson
 from app.rules.county import normalize
 from app.schemas import BedOption, CaseProfile, Precedent, Recommendation, Rule, TreeStep
 
@@ -20,11 +21,11 @@ def _eq(x, y) -> float | None:
     return None if x is None or y is None else float(x == y)
 
 
-def _jaccard(a: list[str], b: list[str]) -> float | None:
-    if not a or not b:  # empty means "not known yet": not held against the match
+def _jaccard(a: list[str] | None, b: list[str] | None) -> float | None:
+    if a is None or b is None:  # None means "not evaluated yet": not held against the match
         return None
     sa, sb = set(a), set(b)
-    return len(sa & sb) / len(sa | sb)
+    return 1.0 if not sa and not sb else len(sa & sb) / len(sa | sb)
 
 
 def similarity(a: CaseProfile, b: CaseProfile) -> float:
@@ -132,6 +133,21 @@ def precedents(session: Session, profile: CaseProfile, limit: int = 3) -> list[P
                                    coordinator_decision=p.get("coordinator_decision", ""), note=lesson.note))
     found.sort(key=lambda x: (-x.similarity, x.lesson_id))
     return found[:limit]
+
+
+def inherited_ids(session: Session, ids: list[int], confirmed_county: str) -> list[int]:
+    """Lessons from an earlier analysis that still hold after the county is confirmed: rule guidance always,
+    a county mapping only when its learned county is the confirmed one. Bed lessons are recomputed, never inherited."""
+    keep = []
+    for lid in ids:
+        lesson = session.get(Lesson, lid)
+        if lesson is None or lesson.status != "approved":
+            continue
+        if lesson.kind == "rule_interpretation":
+            keep.append(lid)
+        elif lesson.kind == "county_mapping" and _norm(json.loads(lesson.payload_json).get("coordinator_county"))                 == _norm(confirmed_county):
+            keep.append(lid)
+    return keep
 
 
 def attach(rec: Recommendation, precedent_list: list[Precedent], used: list[int]) -> Recommendation:

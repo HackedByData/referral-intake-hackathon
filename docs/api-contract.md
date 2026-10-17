@@ -125,6 +125,7 @@ interface CountySuggestion {             // v2, system-filled
   basis: string;                         // e.g. "Health plan 'CalOptima' (p.3) serves Orange County"
   confirmed: boolean;                    // true once a coordinator confirmed/overrode it
   confirmed_by?: string;
+  ai_county?: string;                    // v3: the system suggestion before any confirm (kept across confirms)
 }
 
 interface CountyConfirm { county: string; coordinator: string; }   // v2
@@ -440,7 +441,7 @@ type LessonStatus = "proposed" | "approved" | "rejected" | "retired";
 
 interface CaseProfile {                  // coarse, de-identified: no quotes, no names
   county?: string; payer?: string; sex: Sex; wheelchair?: boolean; oxygen?: boolean; isolation?: boolean;
-  mobility_aid?: string; systems: string[]; flagged_rule_ids: string[];
+  mobility_aid?: string; systems?: string[]; flagged_rule_ids?: string[];  // absent = not evaluated; [] = evaluated, none
 }
 interface Precedent {
   lesson_id: number; similarity: number;   // 0..1, shown only at >= 0.5

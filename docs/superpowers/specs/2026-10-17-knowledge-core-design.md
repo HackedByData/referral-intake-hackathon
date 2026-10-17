@@ -23,7 +23,7 @@ When a coordinator's decision differs from the AI's, the system captures it as a
 | Kind | Captured when | Payload | Used as |
 |---|---|---|---|
 | `decision_precedent` | final decision ≠ AI recommendation (`agreed_with_ai == False`) | `ai_decision`, `coordinator_decision`, `ai_rule_ids` (triggered/flagged) | "Similar past cases" on the review card |
-| `rule_interpretation` | an override sets a rule status different from the AI's | `rule_id`, `ai_status`, `coordinator_status`, `ai_reasoning` (first sentence) | guidance appended to that rule's evaluation prompt |
+| `rule_interpretation` | an override sets a rule status different from the AI's | `rule_id`, `ai_status`, `coordinator_status` | guidance appended to that rule's evaluation prompt |
 | `bed_preference` | approve with `bed_id` ≠ held bed | `held` / `chosen`: `{facility_id, facility, county, sex_designation, wheelchair_accessible, oxygen_ok, isolation_ok, ground_floor}` | re-rank bed options |
 | `county_mapping` | county confirm ≠ AI suggestion | `health_plan`, `ai_county`, `coordinator_county` | merged into the plan→county map |
 

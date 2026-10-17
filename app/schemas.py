@@ -105,6 +105,7 @@ class CountySuggestion(BaseModel):
     basis: str = ""
     confirmed: bool = False
     confirmed_by: str | None = None
+    ai_county: str | None = None  # the AI/system suggestion before any coordinator confirm; kept across confirms
 
 
 class DocumentPresence(BaseModel):
@@ -424,8 +425,8 @@ class CaseProfile(BaseModel):
     oxygen: bool | None = None
     isolation: bool | None = None
     mobility_aid: str | None = None
-    systems: list[str] = []          # body systems whose eligible rules passed, e.g. ["Integumentary"]
-    flagged_rule_ids: list[str] = []  # rules that failed or were unknown
+    systems: list[str] | None = None          # body systems whose eligible rules passed; None = not evaluated yet
+    flagged_rule_ids: list[str] | None = None  # rules that failed or were unknown; None = not evaluated yet
 
 
 class Precedent(BaseModel):

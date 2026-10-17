@@ -71,23 +71,28 @@ class Pipeline:
             t_rules = time.perf_counter()
             used: list[int] = []
             additions, learned = {}, {}
-            guidance: dict[str, list[str]] = {}
             try:  # approved lessons only; a knowledge failure must never block the analysis
                 with Session(self.engine_getter()) as s:
                     additions, learned = knowledge.plan_map_additions(s)
-                    evaluated = [r for rs in self.criteria.groups().values() for r in rs]
-                    guidance, gids = knowledge.rule_guidance(s, evaluated, from_summary(summary))
-                    used += gids
             except Exception:
                 log.exception("Knowledge lookup failed for %s; continuing without it", referral_id)
             plan_map = merge_plan_map(load_plan_map(), additions)
             suggestion = suggest_county(summary, plan_map, learned)  # the model only extracts; code maps plan -> county
+            suggestion = suggestion.model_copy(update={"ai_county": suggestion.county})
             lesson_id = learned_lesson_id(summary, plan_map, learned)
             if lesson_id is not None and suggestion.county:
                 used.append(lesson_id)
             summary = summary.model_copy(update={
                 "suggested_county": suggestion,
                 "bed_needs": summary.bed_needs.model_copy(update={"county": suggestion.county})})
+            guidance: dict[str, list[str]] = {}
+            try:  # the guidance profile includes the county, so it is built after the county suggestion
+                with Session(self.engine_getter()) as s:
+                    evaluated = [r for rs in self.criteria.groups().values() for r in rs]
+                    guidance, gids = knowledge.rule_guidance(s, evaluated, from_summary(summary))
+                    used += gids
+            except Exception:
+                log.exception("Rule guidance lookup failed for %s; continuing without it", referral_id)
             results = await self.evaluate_rules(self.llm, packet, self.criteria,
                                                 concurrency=self.settings.rules_concurrency, guidance=guidance)
             results = verify_results(results, packet)
