@@ -165,7 +165,11 @@ def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Dep
         raise HTTPException(422, "county must not be empty")
     result = AnalysisResult.model_validate_json(ref.result_json)
     old = result.summary.suggested_county or CountySuggestion()
-    basis = f"Confirmed by {body.coordinator}" + (f"; AI suggestion: {old.basis}" if old.basis else "")
+    marker = "; AI suggestion: "
+    ai_basis = old.basis or ""
+    if old.confirmed:  # keep the original AI basis; never nest earlier "Confirmed by ..." text
+        ai_basis = ai_basis.split(marker, 1)[1] if marker in ai_basis else ""
+    basis = f"Confirmed by {body.coordinator}" + (f"; AI suggestion: {ai_basis}" if ai_basis else "")
     summary = result.summary.model_copy(update={
         "suggested_county": old.model_copy(update={"county": county, "confirmed": True,
                                                    "confirmed_by": body.coordinator, "basis": basis}),

@@ -49,7 +49,8 @@ def apply_decision(session: Session, referral_id: str, decision: CoordinatorDeci
         bed_id = decision.bed_id or beds.held_bed_id(session, referral_id)
         if bed_id is None:
             raise DecisionError(409, "No bed is held for this referral (it may have expired or the AI "
-                                     "recommended deny). Choose a bed from bed-matches and pass bed_id.")
+                                     "recommended deny). Choose a bed from bed-matches and pass bed_id. "
+                                     "If the patient's county isn't confirmed yet, confirm it first.")
         try:
             assignment = beds.assign(session, bed_id, referral_id, client_label=referral_id)
         except (beds.BedUnavailable, beds.BedNotFound) as e:

@@ -389,8 +389,8 @@ class CensusImportReport(BaseModel):
 
 
 class CountyConfirm(BaseModel):
-    county: str
-    coordinator: str
+    county: str = Field(min_length=1)
+    coordinator: str = Field(min_length=1)
 
 
 class BedImportReport(BaseModel):

@@ -11,7 +11,7 @@ from app.schemas import (
 )
 
 MAX_CENSUS_BYTES = 20 * 1024 * 1024
-router =APIRouter(prefix="/api", tags=["beds"])
+router = APIRouter(prefix="/api", tags=["beds"])
 
 
 @router.get("/beds", response_model=list[BedView])

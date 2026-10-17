@@ -181,6 +181,15 @@ def test_confirm_county_holds_bed_and_audits(nc_client):
     assert "county_confirmed" in actions
 
 
+def test_confirm_county_twice_does_not_nest_basis(nc_client):
+    rid = upload(nc_client).json()["id"]
+    nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Pat"})
+    r = nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Sam"})
+    basis = r.json()["county"]["basis"]
+    assert basis.startswith("Confirmed by Sam") and basis.count("AI suggestion:") <= 1
+    assert "Confirmed by Pat" not in basis
+
+
 def test_changing_county_releases_old_hold(nc_client):
     from app.beds import service
     from app.db import get_engine
