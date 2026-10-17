@@ -10,7 +10,10 @@ from app.beds import service as beds
 from app.config import get_settings
 from app.db import get_session
 from app.ingest.ocr import CORRECTION
+from app.knowledge import apply as knowledge
 from app.knowledge import capture
+from app.knowledge import store as knowledge_store
+from app.knowledge.profile import build_profile
 from app.ingest.render import InvalidPDF, page_count, render_page, validate_pdf
 from app.rules.criteria import load_criteria
 from app.rules.tree import decide as decide_tree
@@ -178,21 +181,38 @@ def confirm_county(referral_id: str, body: CountyConfirm, session: Session = Dep
                                                    "confirmed_by": body.coordinator, "basis": basis}),
         "bed_needs": result.summary.bed_needs.model_copy(update={"county": county})})
     beds.release_hold(session, referral_id)
-    options = beds.find_matches(session, summary.bed_needs, for_referral=referral_id)
-    rec = decide_tree(load_criteria().rules, result.rule_results, summary, options)
+    criteria = load_criteria()
+    options = beds.find_matches(session, summary.bed_needs, limit=10, for_referral=referral_id)
+    used = list(result.knowledge_used)  # lessons already used by the analysis (guidance, county) still apply
+    profile = build_profile(result.model_copy(update={"summary": summary}), criteria.rules)
+    precedent_list = []
+    try:
+        options, bed_ids = knowledge.rerank_beds(session, options, profile)
+        precedent_list = knowledge.precedents(session, profile)
+        used += bed_ids + [p.lesson_id for p in precedent_list]
+    except Exception:
+        log.exception("Knowledge re-rank failed for %s; using default bed order", referral_id)
+    rec = decide_tree(criteria.rules, result.rule_results, summary, options[:3])
+    rec = knowledge.attach(rec, precedent_list, used)
     if rec.held_bed:
         try:
             beds.hold(session, rec.held_bed.bed_id, referral_id, get_settings().hold_ttl_hours)
         except (beds.BedUnavailable, beds.BedNotFound):
             rec = rec.model_copy(update={"held_bed": None, "review_reasons": rec.review_reasons + [
                 ReviewReason(kind="no_bed", rule_ids=[], detail="Matched bed was taken before it could be held.")]})
-    result = result.model_copy(update={"summary": summary, "recommendation": rec})
+    result = result.model_copy(update={"summary": summary, "recommendation": rec, "profile": profile,
+                                       "knowledge_used": sorted(set(used))})
     ref.result_json = result.model_dump_json()
     ref.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(ref)
     session.commit()
     audit.record(session, "county_confirmed", actor=body.coordinator, referral_id=referral_id, county=county,
                  held_bed=rec.held_bed.bed_id if rec.held_bed else None)
+    try:
+        knowledge_store.mark_applied(session, result.knowledge_used)
+    except Exception:
+        log.exception("Could not record lesson usage for %s", referral_id)
+        session.rollback()
     try:  # propose a county_mapping lesson when the coordinator disagrees with the AI's suggestion
         capture.from_county(session, referral_id, result, old, county, body.coordinator, load_criteria())
     except Exception:

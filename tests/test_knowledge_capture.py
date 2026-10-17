@@ -143,3 +143,27 @@ def test_county_confirm_same_as_ai_creates_nothing(client):
     c.post("/api/referrals/R1/county", json={"county": "orange county", "coordinator": "Coord"})
     with Session(engine) as s:
         assert store.list_lessons(s) == []
+
+
+def test_county_rematch_applies_bed_preference_and_precedents(client):
+    from app.beds.models import Bed, Site
+    from tests.kn_helpers import approved, bed_payload
+    c, engine = client
+    with Session(engine) as s:
+        s.add(Site(id="sx", name="Extra Orange Site", county="Orange", program_type="recuperative_care"))
+        s.add(Bed(id="X1", site_id="sx", room="1", label="A", sex_designation="male"))
+        s.commit()
+        base = c.post("/api/referrals/R1/county", json={"county": "Orange", "coordinator": "Coord"}).json()
+        first = base["recommendation"]["held_bed"]["bed_id"]
+        assert first != "X1"
+        lesson_id = approved(s, "bed_preference", bed_payload("demo-site-a", "sx")).id
+        prec_id = approved(s, "decision_precedent", {"ai_decision": "approve", "coordinator_decision": "deny"}).id
+    out = c.post("/api/referrals/R1/county", json={"county": "Orange", "coordinator": "Coord"}).json()
+    assert out["recommendation"]["held_bed"]["bed_id"] == "X1"
+    assert [p["lesson_id"] for p in out["recommendation"]["precedents"]] == [prec_id]
+    assert any(t["node"] == "knowledge" and t["outcome"] == "triggered" for t in out["recommendation"]["tree"])
+    with Session(engine) as s:
+        from app.schemas import AnalysisResult
+        r = AnalysisResult.model_validate_json(s.get(Referral, "R1").result_json)
+        assert lesson_id in r.knowledge_used and prec_id in r.knowledge_used
+        assert {v.id: v.times_applied for v in store.list_lessons(s)}[lesson_id] == 1
