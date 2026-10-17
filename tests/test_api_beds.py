@@ -127,3 +127,20 @@ def test_bed_detail_has_stay_extra(client):
     assert client.get("/api/beds/rc-test-101-b").json()["current_stay"] is None
     assert client.get("/api/beds/nope").status_code == 404
 
+
+
+def test_census_import_oversize_413(client):
+    big = b"0" * (20 * 1024 * 1024 + 1)
+    r = client.post("/api/census/import", files={"file": ("census.xlsx", big, XLSX)})
+    assert r.status_code == 413
+
+
+def test_census_import_failure_rolls_back_400(client, monkeypatch):
+    from app.beds import census as census_mod
+
+    def boom(session, sheets, program_hint=True):
+        raise RuntimeError("kaboom")
+    monkeypatch.setattr(census_mod, "import_census", boom)
+    r = client.post("/api/census/import", files={"file": ("census.xlsx", _workbook(), XLSX)})
+    assert r.status_code == 400 and "Census import failed" in r.json()["detail"]
+

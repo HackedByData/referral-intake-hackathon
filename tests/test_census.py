@@ -207,3 +207,79 @@ def test_real_workbook_parses():
     for name in ("SFS", "Lincoln Park"):
         labels = [r.label for r in sh[name].rows]
         assert len(labels) >= 20 and len(labels) == len(set(labels))
+
+
+def _workbook_with(builder) -> bytes:
+    wb = openpyxl.Workbook()
+    builder(wb)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_block_without_if_column_is_kept_when_it_has_name_columns():
+    """MWC-style: left block has no IF# column, right block does."""
+    def build(wb):
+        ws = wb.active
+        ws.title = "MWC Test"
+        ws.append(["Room #/Bed #", "/", "First Name", "Last Name", "Intake Date", "Notes", None, None, None,
+                   "Room#/ Bed#", "IF#", "First Name", "Last ", "Intake"])
+        ws.append(["1", None, "Open", None, None, None, None, None, None, "11A", None, "Open"])
+        ws.append(["2", None, "Zed", "Q.", None, None, None, None, None, "11B", "IF2099-5", "Yan", "R."])
+    sheets, _ = census.parse_workbook(_workbook_with(build))
+    rows = {r.label: r for r in sheets[0].rows}
+    assert set(rows) == {"1", "2", "11A", "11B"}
+    assert rows["2"].stay["first_name"] == "Zed" and rows["11B"].stay["client_id"] == "IF2099-5"
+
+
+def test_bed_attribute_column_does_not_split_a_block():
+    def build(wb):
+        ws = wb.active
+        ws.title = "Attr Test"
+        ws.append(["Room", "IF #", "First Name", "Last Name", "Intake Date", "Bed", "Pets", "Current Census"])
+        ws.append(["1", "IF2099-6", "Xan", "S.", None, "DBL", "No"])
+    sheets, _ = census.parse_workbook(_workbook_with(build))
+    assert [r.label for r in sheets[0].rows] == ["1"]
+    assert sheets[0].rows[0].stay["extra"]["Pets"] == "No"
+
+
+def _seeded_bed(session):
+    seed_poc_beds(session)
+    occupied = session.exec(select(Assignment).where(Assignment.status == "active")).first()
+    return session.get(Bed, occupied.bed_id)
+
+
+def test_census_import_closes_seed_stay_when_bed_empty(session):
+    bed = _seeded_bed(session)
+    sheets, _ = parsed()
+    sheets[0].sheet = session.get(Site, bed.site_id).name
+    sheets[0].rows = [census.ParsedRow(label=bed.label, status="available")]
+    census.import_census(session, sheets)
+    session.expire_all()
+    active = session.exec(select(Assignment).where(Assignment.bed_id == bed.id, Assignment.status == "active")).all()
+    assert active == [] and session.get(Bed, bed.id).status == "available"
+
+
+def test_census_import_replaces_seed_stay_with_new_occupant(session):
+    bed = _seeded_bed(session)
+    sheets, _ = parsed()
+    sheets[0].sheet = session.get(Site, bed.site_id).name
+    stay = {"client_id": "IF2099-8", "first_name": "Fresh", "last_name": "F.", "gender": None, "intake_date": None,
+            "expected_exit_date": None, "exit_date": None, "payer": None, "case_manager": None, "notes": "",
+            "extra": {}}
+    sheets[0].rows = [census.ParsedRow(label=bed.label, status="occupied", stay=stay)]
+    census.import_census(session, sheets)
+    active = session.exec(select(Assignment).where(Assignment.bed_id == bed.id, Assignment.status == "active")).all()
+    assert [a.first_name for a in active] == ["Fresh"]
+
+
+@pytest.mark.skipif(not REAL_WORKBOOK.exists(), reason="local synthetic census not present")
+def test_real_workbook_block_counts():
+    sheets, _ = census.parse_workbook(REAL_WORKBOOK.read_bytes())
+    sh = by_sheet(sheets)
+    labels = [r.label for r in sh["MWC"].rows]
+    assert "11A" in labels and "1" in labels and len(labels) >= 30
+    assert len(sh["Royal Pagoda PRK"].rows) == 38
+    assert len(sh["Laguna Hills VPS"].rows) == 78
+    assert len(sh["Anaheim VPS"].rows) == 301
+

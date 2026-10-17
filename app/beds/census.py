@@ -98,13 +98,16 @@ def _block_starts(header: list[str]) -> list[int]:
             starts.append(j)
         elif j + 1 < len(header) and is_if[j + 1] and not re.search(r"[A-Za-z]", h):
             starts.append(j)
-    # a start only counts when its block (up to the next start) holds an IF column
+    # A start only counts when its segment (up to the next candidate start) has an IF column or its own
+    # name/intake columns. A dropped candidate (e.g. a "Bed" attribute column in Royal Pagoda) is simply not a
+    # boundary, so its columns are absorbed into the previous block's segment.
     kept: list[int] = []
     bounds = starts + [len(header)]
     for k, s in enumerate(starts):
-        if any(is_if[s:bounds[k + 1]]):
+        seg = bounds[k], bounds[k + 1]
+        fields = {SYNONYM_TO_FIELD.get(_norm_header(h)) for h in header[seg[0] + 1:seg[1]]}
+        if any(is_if[seg[0]:seg[1]]) or fields & {"first_name", "last_name", "intake_date"}:
             kept.append(s)
-    # recompute: dropped starts merge into the previous block
     return kept
 
 
@@ -311,7 +314,7 @@ def _upsert_row(session: Session, site: Site, row: ParsedRow, rep: CensusSheetRe
         return
     bed.status = row.status
     session.add(bed)
-    census_stays = [a for a in active if a.source == "census"]
+    census_stays = [a for a in active if a.source in ("census", "seed")]  # snapshot-replaceable
     keep = None
     for a in census_stays:
         if row.stay is not None and keep is None and _same_stay(a, row.stay):
@@ -344,6 +347,7 @@ def import_census(session: Session, sheets: list[ParsedSheet], program_hint: boo
         seen: set[str] = set()
         for row in sh.rows:
             _upsert_row(session, site, row, rep, seen)
-        session.commit()
+        session.flush()
         report.sheets.append(rep)
+    session.commit()  # one commit: the whole workbook imports or nothing does
     return report

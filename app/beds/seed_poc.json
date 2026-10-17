@@ -10066,6 +10066,142 @@
    "notes": "POC placeholder county/program — confirm with IHH",
    "beds": [
     {
+     "label": "1",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "2",
+     "status": "out_of_service",
+     "notes": "sink",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "3",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "4",
+     "status": "out_of_service",
+     "notes": "no light",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "5",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "6",
+     "status": "out_of_service",
+     "notes": "no light",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "7A",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "7B",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "7C",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "7D",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "8A",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "8B",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "9A",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "9B",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "10A",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "10B",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
+     "label": "0",
+     "status": "available",
+     "notes": "",
+     "wheelchair": false,
+     "sex_designation": "any",
+     "stay": null
+    },
+    {
      "label": "11A",
      "status": "out_of_service",
      "notes": "no light",

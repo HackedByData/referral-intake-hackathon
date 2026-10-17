@@ -10,7 +10,8 @@ from app.schemas import (
     FacilityUpdate, FacilityView,
 )
 
-router = APIRouter(prefix="/api", tags=["beds"])
+MAX_CENSUS_BYTES = 20 * 1024 * 1024
+router =APIRouter(prefix="/api", tags=["beds"])
 
 
 @router.get("/beds", response_model=list[BedView])
@@ -45,14 +46,18 @@ def update_facility(facility_id: str, data: FacilityUpdate, session: Session = D
 
 
 @router.post("/census/import", response_model=CensusImportReport)
-async def import_census_file(file: UploadFile, session: Session = Depends(get_session)):
+def import_census_file(file: UploadFile, session: Session = Depends(get_session)):
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(400, "Upload an .xlsx census workbook")
+    data = file.file.read(MAX_CENSUS_BYTES + 1)
+    if len(data) > MAX_CENSUS_BYTES:
+        raise HTTPException(413, "Census workbook is larger than 20 MB")
     try:
-        sheets, skipped = census.parse_workbook(await file.read())
-    except Exception:
-        raise HTTPException(400, "Could not read the file as an Excel workbook")
-    report = census.import_census(session, sheets)
+        sheets, skipped = census.parse_workbook(data)
+        report = census.import_census(session, sheets)  # single commit at the end
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(400, f"Census import failed: {e}")
     report.skipped_sheets = skipped
     return report
 
