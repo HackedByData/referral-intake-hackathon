@@ -172,7 +172,7 @@ class CaseSummary(BaseModel):
     admitting_diagnosis: str | None
     housing_situation: str | None
     has_ihh_referral_form: bool
-    documents_present: dict[str, list[int]]   # DOC-id -> pages where found
+    documents_present: list[DocumentPresence] # {doc_id: 'DOC-6', pages: [4, 5]} (a list, not a dict: strict structured outputs)
     key_findings: list[str]
     conflicts: list[Conflict]
     bed_needs: BedNeeds
@@ -189,7 +189,7 @@ class HospitalQuestion(BaseModel):
     question: str
 
 class TreeStep(BaseModel):
-    node: Literal["exclusions", "must_rules", "general_eligibility", "human_review", "missing_info", "conflicts", "bed"]
+    node: Literal["exclusions", "must_rules", "general_eligibility", "human_review", "missing_info", "unverified", "conflicts", "bed"]
     outcome: Literal["triggered", "clear"]
     rule_ids: list[str]
     explanation: str
@@ -259,7 +259,7 @@ One call over the full packet markdown → `CaseSummary` (bed needs, conflicts, 
 packet prefix is written to the prompt cache before the parallel calls.
 
 ### 7.3 Rule evaluation (parallel)
-Six rule groups, evaluated concurrently. Each gets the same cached prefix (system prompt + packet markdown + precedence
+Eight rule groups (≤30 rules each), evaluated concurrently. Each gets the same cached prefix (system prompt + packet markdown + precedence
 notes + the known-gaps table) followed by its rule list:
 
 | Group | Rules |
@@ -268,8 +268,10 @@ notes + the known-gaps table) followed by its rule list:
 | `behavior` | MH-*, OTH-*, FORM-X1, X2, X5, X7 |
 | `infection_docs` | Infection Control, Infection, End of life, FORM-X4, DOC-1..10 |
 | `disease` | Diabetes, Cardiac, Respiratory Illness |
-| `systems_a` | by_system: Integumentary, Ophthalmology, Respiratory, Musculoskeletal, GI |
-| `systems_b` | by_system: Endocrine, GU, Circulatory System, Neurology |
+| `systems_a` | by_system: Integumentary, Ophthalmology, Respiratory |
+| `systems_b` | by_system: Musculoskeletal, GI |
+| `systems_c` | by_system: Endocrine, GU |
+| `systems_d` | by_system: Circulatory System, Neurology |
 
 The output is `list[RuleResult]`. The engine checks coverage: any rule ID in the group missing from the output gets
 `status="unknown", confidence="low", reasoning="Not evaluated by the model"`, which is flagged. Unknown rule IDs
@@ -312,7 +314,7 @@ Baseline model, to be revised when IHH's sheet details arrive. Only `service.py`
 
 Tables:
 - `Site(id, name)`
-- `Bed(id, site_id, room, label, sex_designation: male|female|any, wheelchair_accessible, ground_floor, oxygen_ok, isolation_ok, status: available|held|occupied|out_of_service, notes)`
+- `Bed(id, site_id, room, label, sex_designation: male|female|any, wheelchair_accessible, ground_floor, oxygen_ok, isolation_ok, status: available|occupied|out_of_service, notes)`. The API status `held` is **derived** from an active, unexpired Hold.
 - `Hold(id, bed_id, referral_id, created_at, expires_at, active)`, default TTL `HOLD_TTL_HOURS=4`
 - `Assignment(id, bed_id, referral_id, client_label, start_date, expected_end_date, released_at, status: active|released)`. `client_label` is a non-identifying label (e.g. referral ID).
 
@@ -356,7 +358,7 @@ approved_by, approved_at). The field mapping to the real Kipu API is explicitly 
 | GET | `/api/beds/summary` | counts |
 | POST | `/api/beds` / PATCH `/api/beds/{id}` | create / edit / set status |
 | POST | `/api/beds/import` | multipart CSV/XLSX |
-| GET | `/api/beds/matches?referral_id=` | ranked BedOptions for a referral |
+| GET | `/api/referrals/{id}/bed-matches` | ranked BedOptions for a referral |
 | POST | `/api/assignments/{id}/discharge` | free a bed |
 | GET | `/api/audit?referral_id=` | audit events |
 | GET | `/api/health` | `{ok, model, api_key_configured}` |
