@@ -99,7 +99,19 @@ locally. Real packets are never uploaded to the hosted demo.
 
 Dates in the packets are blacked out, so rules that depend on a time window (for example insulin in the last 24 hours, alcohol use in the last 72 hours, COVID swab age) usually come back unknown, and the tool says "can't tell from this packet" rather than guessing. Quote verification is fuzzy (normalized match, then a similarity threshold, with numbers and negations required to appear on the page), so a near-miss quote can slip through or a correct one can be flagged. Handwriting, very faint fax text and badly rotated pages are hard to transcribe, and a misread there flows into the rules. The admission rules are partly judgment calls and some wording is unclear, so the tool surfaces those cases to the coordinator instead of choosing silently. We would not trust it to approve or deny without a person reading the cited evidence.
 
-Eval scorecard (11 real packets vs IHH's decisions): pending live run — see docs/eval-scorecard.md.
+**Eval (11 real packets vs IHH's actual decisions, 2026-10-17, prompt 2026-10-17.2; full table in [docs/eval-scorecard.md](docs/eval-scorecard.md)):**
+
+| Result | Count |
+|---|---|
+| Matches IHH | 3 / 11 (all three denials: R01, R09, R10) |
+| **False approvals** (we approve, IHH denied) | **0** |
+| False denials | 3 (R03, R07, R08) |
+| Needs review (coordinator decides) | 5 (4 IHH approved, 1 IHH denied) |
+
+What the misses tell us:
+- **No packet came back "approve".** Every packet has 18–29 "missing information" items (e.g. the 30-day medication supply, and time-window rules that dates-redacted packets cannot answer). The tree sends unknown required items to review instead of guessing, which is why there are no false approvals, and also no automatic approvals. The coordinator still decides; the tool hands them the questions to ask the hospital.
+- **R03 (CARD-5) and R08 (MOB-1/MOB-3):** the written criteria say ineligible (ejection fraction below 25% after a heart attack; walking with a walker under supervision), with verified quotes, but IHH approved. That is IHH's practice going beyond its written rules: exactly what the knowledge core is for (a coordinator override becomes a staff-approved lesson).
+- **R07 (RSP-X5, "requires BiPAP"):** a real model error. BiPAP was ordered, but the packet does not say it is needed after discharge; the model's own reasoning says so, yet it marked the rule failed instead of unknown. Next prompt fix: an exclusion fails only when the condition is established for after discharge.
 
 ## Next steps
 
