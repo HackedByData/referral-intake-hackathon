@@ -52,10 +52,39 @@ async def test_rotated_page_is_retried_upright(pdf, tmp_path):
             return PageMarkdown(page=0, doc_type="labs", orientation="rotated_90", legibility="poor", markdown="garbled")
         return PageMarkdown(page=0, doc_type="labs", orientation="upright", legibility="good", markdown="clean")
 
-    packet = await transcribe_packet(FakeLLM(handler), pdf, tmp_path / "c", concurrency=1)
+    llm = FakeLLM(handler)
+    packet = await transcribe_packet(llm, pdf, tmp_path / "c", concurrency=1)
     p1 = packet.pages[0]
     assert p1.markdown == "clean" and p1.orientation == "rotated_90"  # original orientation kept for the image endpoint
     assert CORRECTION["rotated_90"] == 270
+    assert llm.calls[1]["content"][0]["source"]["data"] != llm.calls[0]["content"][0]["source"]["data"]
+
+
+def _first_call_rotated(second):
+    state = {"n": 0}
+
+    def handler(output, system, content):
+        state["n"] += 1
+        if state["n"] == 1:
+            return PageMarkdown(page=0, doc_type="labs", orientation="rotated_90", legibility="partial", markdown="first")
+        if state["n"] == 2:
+            return second()
+        return upright(output, system, content)
+
+    return handler
+
+
+async def test_worse_retry_keeps_first_transcription(pdf, tmp_path):
+    handler = _first_call_rotated(lambda: PageMarkdown(
+        page=0, doc_type="labs", orientation="upright", legibility="poor", markdown="worse"))
+    packet = await transcribe_packet(FakeLLM(handler), pdf, tmp_path / "c", concurrency=1)
+    assert packet.pages[0].markdown == "first"
+
+
+async def test_failing_retry_keeps_first_transcription(pdf, tmp_path):
+    handler = _first_call_rotated(lambda: LLMError("retry boom"))
+    packet = await transcribe_packet(FakeLLM(handler), pdf, tmp_path / "c", concurrency=1)
+    assert packet.pages[0].markdown == "first" and packet.pages[0].markdown != FAILED_MARKER
 
 
 async def test_failed_page_does_not_stop_run_and_is_not_cached(pdf, tmp_path):

@@ -41,10 +41,14 @@ async def _transcribe_page(llm, pdf_path: Path, packet_hash: str, page: int, cac
             result = await _ocr(llm, image, media, page)
             fix = CORRECTION.get(result.orientation)
             if fix:
-                image2, media2 = await asyncio.to_thread(cached_page_image, pdf_path, packet_hash, page, cache_root, fix)
-                retry = await _ocr(llm, image2, media2, page)
-                if LEGIBILITY_RANK[retry.legibility] >= LEGIBILITY_RANK[result.legibility]:
-                    result = retry.model_copy(update={"orientation": result.orientation})
+                try:
+                    image2, media2 = await asyncio.to_thread(
+                        cached_page_image, pdf_path, packet_hash, page, cache_root, fix)
+                    retry = await _ocr(llm, image2, media2, page)
+                    if LEGIBILITY_RANK[retry.legibility] >= LEGIBILITY_RANK[result.legibility]:
+                        result = retry.model_copy(update={"orientation": result.orientation})
+                except Exception as e:
+                    log.warning("Page %s orientation retry failed, keeping first transcription: %s", page, e)
             return result.model_copy(update={"page": page})
         except Exception as e:
             log.warning("Page %s transcription attempt %s failed: %s", page, attempt + 1, e)
