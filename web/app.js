@@ -52,7 +52,7 @@ const fresh = () => ({
   confirmed: { bed: false, why: false, patient: false },
   editing: { bed: false, why: false, patient: false },
   snapshot: {},
-  chosenBed: null, overrides: {}, patientEdits: {}, critFilter: "all", notes: "",
+  chosenBed: null, overrides: {}, patientEdits: {}, open: {}, notes: "",
   deciding: false, decideError: null, countyDraft: "", countyBusy: false, countyError: null,
 });
 const S = {
@@ -394,7 +394,7 @@ function renderReview() {
 
 function renderVerdict() {
   const r = rec();
-  const items = [["bed", "Bed"], ["why", "Reasons"], ["patient", "Patient information"]];
+  const items = [["bed", "Bed"], ["why", "Admission criteria"], ["patient", "Patient information"]];
   return h("section", { class: "verdict", "aria-label": "AI recommendation" },
     h("div", { class: `verdict-main v-${r.decision}` },
       h("div", { class: "verdict-kicker" }, "The AI recommends"),
@@ -537,57 +537,6 @@ async function saveCounty() {
   S.r.countyBusy = false; render(); scrollToPanel("bed");
 }
 
-// ----- Table 2: why -----
-function renderWhyPanel() {
-  const r = rec();
-  const d = S.r.details;
-  const conflicts = d.summary.conflicts || [];
-  const unverified = r.review_reasons.filter((x) => x.kind === "unverified_evidence");
-  const reasons = r.review_reasons.filter((x) => x.kind !== "no_bed" && x.kind !== "county_needed");
-  const editing = S.r.editing.why;
-  const nOver = Object.keys(S.r.overrides).length;
-
-  const questions = r.hospital_questions.length ? h("div", {},
-    h("div", { class: "panel-head", style: "margin:20px 0 8px" }, h("h3", {}, "Questions to ask the hospital"),
-      h("button", { class: "btn btn-small", onclick: (e) => copyText(r.hospital_questions.map((q, i) => `${i + 1}. ${q.question}`).join("\n"), e.target) }, "Copy questions")),
-    h("div", { class: "table-wrap" }, h("table", {},
-      h("thead", {}, h("tr", {}, h("th", {}, "Rule"), h("th", {}, "Question"))),
-      h("tbody", {}, r.hospital_questions.map((q) => h("tr", {}, h("td", { class: "rule-id" }, q.rule_id), h("td", {}, q.question))))))) : null;
-
-  return panel("why", "2", "Why this recommendation",
-    editing ? "Change the result of any criterion the AI got wrong. Give a short reason for each change." : "What the AI found, what still needs a person, and every IHH admission criterion with the reason for its result.",
-    [
-      unverified.length ? h("div", { class: "notice notice-warn" }, h("p", {}, h("strong", {}, "Check these quotes. "),
-        "The AI quoted the packet, but the quote could not be found on that page: ", unverified.flatMap((x) => x.rule_ids).join(", "), ".")) : null,
-      conflicts.length ? h("div", { class: "notice notice-warn" }, h("p", {}, h("strong", {}, "Pages of the packet disagree")),
-        conflicts.map((c) => h("div", { style: "margin-top:10px" },
-          h("p", {}, h("strong", {}, c.topic + ". "), c.why_it_matters, " ", c.related_rule_ids.map((x) => h("span", { class: "rule-id" }, x + " "))),
-          c.statements.map(evidenceLine)))) : null,
-      reasons.length ? h("div", { class: "table-wrap" }, h("table", {},
-        h("thead", {}, h("tr", {}, h("th", {}, "Needs attention"), h("th", {}, "Type"), h("th", {}, "Rules"))),
-        h("tbody", {}, reasons.map((x) => h("tr", {}, h("td", {}, x.detail), h("td", {}, REVIEW_KIND[x.kind] || x.kind), h("td", { class: "rule-id" }, x.rule_ids.join(", "))))))) :
-        h("div", { class: "notice notice-ok" }, h("p", {}, "Nothing flagged for review.")),
-      questions,
-      nOver ? h("div", { class: "notice notice-info" }, h("p", {}, `You changed ${nOver} rule result(s). They are sent with your decision.`)) : null,
-      S.r.whyError ? h("p", { class: "why-disabled", role: "alert" }, S.r.whyError) : null,
-      renderReasoning(editing),
-    ], {
-      onSave: () => {
-        const missing = Object.entries(S.r.overrides).filter(([, o]) => !o.note.trim()).map(([id]) => id);
-        S.r.whyError = missing.length ? `Give a reason for your change to ${missing.join(", ")}.` : null;
-        if (missing.length) { render(); return false; }
-        return true;
-      },
-    });
-}
-
-function evidenceLine(e) {
-  return h("div", { class: `evidence ${e.verified ? "" : "unverified"}`, style: "margin-top:6px" },
-    h("button", { class: "btn btn-small", onclick: () => openPage(e.page, e.quote) }, `Page ${e.page}`),
-    h("div", {}, h("q", {}, e.quote),
-      e.verified ? null : h("div", { class: "why-disabled" }, "Not found on this page. Open the page and check.")));
-}
-
 // ----- Admission criteria checklist -----
 // Every IHH criterion (GET /api/criteria), grouped the way IHH's outline reads, with the AI's result and its reason.
 // Groups are matched in this order (first match wins) and shown in DISPLAY_ORDER.
@@ -663,94 +612,131 @@ function groupVerdict(key, rows) {
   return [{ exclude: "None present", document: "All in the packet", conditional: "All arranged or not needed" }[key] || "All met", "b-ok"];
 }
 
-function renderReasoning(editing) {
+// ----- Table 2: admission criteria checklist -----
+// First glance: one row per main criterion, clear or not. Open a row to see each item, open an item to see why.
+const CHECK_ICON = { "b-ok": "✓", "b-bad": "✗", "b-warn": "?", "b-held": "?", "b-off": "–", "b-info": "i" };
+const CHECK_WORD = { "b-ok": "Clear", "b-bad": "Not clear", "b-warn": "Needs checking", "b-held": "Needs checking", "b-off": "Does not apply", "b-info": "For your information" };
+
+function checkRow(id, cls, title, detail, body, { item = false, defaultOpen = false } = {}) {
+  const open = id in S.r.open ? S.r.open[id] : defaultOpen;
+  return h("details", { class: `check ${item ? "check-item" : ""} c-${cls}`, open, ontoggle: (e) => (S.r.open[id] = e.target.open) },
+    h("summary", {},
+      h("span", { class: "check-icon", "aria-hidden": "true" }, CHECK_ICON[cls] || "•"),
+      h("span", { class: "check-title" }, title),
+      h("span", { class: "check-detail" }, detail),
+      h("span", { class: "check-chevron", "aria-hidden": "true" }, "▾")),
+    h("div", { class: "check-body" }, body));
+}
+
+function renderWhyPanel() {
   const r = rec();
-  const tree = h("ol", { class: "tree" }, r.tree.map((t) => h("li", { class: t.outcome },
-    h("span", { class: "dot", "aria-hidden": "true" }, t.outcome === "triggered" ? "!" : "✓"),
-    h("div", {}, h("strong", {}, TREE_NODE[t.node] || t.node), " ",
-      badge(t.outcome === "triggered" ? "Found something" : "Clear", t.outcome === "triggered" ? "b-warn" : "b-ok"),
-      h("p", { style: "margin:4px 0 0" }, t.explanation, " ", t.rule_ids.map((x) => h("span", { class: "rule-id" }, x + " ")))))));
-
-  return h("details", { class: "reasoning", open: S.r.reasoningOpen !== false || editing, ontoggle: (e) => (S.r.reasoningOpen = e.target.open) },
-    h("summary", {}, "Admission criteria and the AI's reasoning"),
-    renderCriteria(editing),
-    h("details", { class: "crit-group" }, h("summary", {}, "How the AI reached its recommendation, step by step"),
-      h("div", { class: "crit-group-body" }, tree)));
-}
-
-function renderCriteria(editing) {
+  const editing = S.r.editing.why;
+  const nOver = Object.keys(S.r.overrides).length;
   const all = criteriaRows();
-  const filter = S.r.critFilter || "all";
-  const nAttention = all.filter((x) => x.attention).length;
-  const chips = h("div", { class: "filters", role: "group", "aria-label": "Which criteria to show" },
-    [["all", `All criteria (${all.length})`], ["attention", `Only what needs attention (${nAttention})`]].map(([k, label]) =>
-      h("button", { class: "chip", "aria-pressed": String(filter === k), onclick: () => { S.r.critFilter = k; render(); } }, label)));
 
-  S.r.openGroups = S.r.openGroups || {};
-  const groups = DISPLAY_ORDER.map((key) => {
+  const rows = DISPLAY_ORDER.map((key) => {
     const g = CRITERIA_GROUPS.find((x) => x.key === key);
-    const rows = all.filter((x) => x.group === key);
-    const shown = filter === "attention" ? rows.filter((x) => x.attention) : rows;
-    if (!shown.length) return null;
-    const [verdict, cls] = groupVerdict(key, rows);
-    const isOpen = filter === "attention" || (key in S.r.openGroups ? S.r.openGroups[key] : cls === "b-bad" || cls === "b-warn" || key === "general");
+    const items = all.filter((x) => x.group === key);
+    if (!items.length) return null;
+    const [verdict, cls] = groupVerdict(key, items);
     const intro = key === "form" && S.criteria ? `${g.intro} ${S.criteria.precedence}` : g.intro;
-    return h("details", { class: "crit-group", open: isOpen, ontoggle: (e) => (S.r.openGroups[key] = e.target.open) },
-      h("summary", {}, h("span", {}, g.title), badge(verdict, cls), h("span", { class: "small muted" }, `${rows.length} criteria`)),
-      h("div", { class: "crit-group-body" },
-        h("p", { class: "muted small" }, intro),
-        h("div", { class: "crit-head", "aria-hidden": "true" }, h("span", {}, "IHH criterion"), h("span", {}, "Result"), h("span", {}, "Why")),
-        shown.map((x) => criterionRow(x, editing, key !== "general" && key !== "form"))));
+    return checkRow(`g:${key}`, cls, g.title,
+      [h("strong", {}, CHECK_WORD[cls]), h("span", { class: "muted" }, verdict)],
+      [h("p", { class: "muted small" }, intro),
+        h("div", { class: "checklist" }, items.map((x) => criterionItem(x, editing, key !== "general" && key !== "form")))]);
   });
-  return h("div", { class: "criteria" },
-    h("p", { class: "muted small" }, "Each line shows IHH's own wording, the AI's result, and the reason, with the page it came from."),
-    chips,
-    groups.some(Boolean) ? groups : h("div", { class: "notice notice-ok" }, h("p", {}, "Nothing needs attention.")));
+
+  const conflicts = S.r.details.summary.conflicts || [];
+  rows.push(checkRow("x:conflicts", conflicts.length ? "b-warn" : "b-ok", "Pages of the packet agree",
+    [h("strong", {}, conflicts.length ? "Needs checking" : "Clear"), h("span", { class: "muted" }, conflicts.length ? `${conflicts.length} disagreement(s)` : "No disagreements found")],
+    conflicts.length ? conflicts.map((c) => h("div", {},
+      h("p", {}, h("strong", {}, c.topic + ". "), c.why_it_matters, " ", c.related_rule_ids.map((x) => h("span", { class: "rule-id" }, x + " "))),
+      c.statements.map(evidenceLine))) : h("p", {}, "The AI found no places where pages of the packet disagree.")));
+
+  const qs = r.hospital_questions;
+  rows.push(checkRow("x:questions", qs.length ? "b-warn" : "b-ok", "Questions for the hospital",
+    [h("strong", {}, qs.length ? `${qs.length} to ask` : "None needed"), h("span", { class: "muted" }, qs.length ? "Information missing from the packet" : "")],
+    qs.length ? [
+      h("button", { class: "btn btn-small", onclick: (e) => copyText(qs.map((q, i) => `${i + 1}. ${q.question}`).join("\n"), e.target) }, "Copy questions"),
+      h("ol", { class: "questions" }, qs.map((q) => h("li", {}, q.question, " ", h("span", { class: "rule-id" }, q.rule_id))))]
+      : h("p", {}, "The packet answers everything IHH needs.")));
+
+  rows.push(checkRow("x:tree", "b-info", "How the AI reached its recommendation",
+    [h("strong", {}, "Step by step"), h("span", { class: "muted" }, `Recommends: ${DECISION_WORD[r.decision]}`)],
+    h("ol", { class: "tree" }, r.tree.map((t) => h("li", { class: t.outcome },
+      h("span", { class: "dot", "aria-hidden": "true" }, t.outcome === "triggered" ? "!" : "✓"),
+      h("div", {}, h("strong", {}, TREE_NODE[t.node] || t.node), " ",
+        badge(t.outcome === "triggered" ? "Found something" : "Clear", t.outcome === "triggered" ? "b-warn" : "b-ok"),
+        h("p", { style: "margin:4px 0 0" }, t.explanation, " ", t.rule_ids.map((x) => h("span", { class: "rule-id" }, x + " ")))))))));
+
+  return panel("why", "2", "Admission criteria",
+    editing ? "Open a criterion and change its result if the AI got it wrong. Give a short reason for each change."
+      : "Each main criterion shows whether it is clear. Open one to see each item, then open an item to see why.",
+    [
+      nOver ? h("div", { class: "notice notice-info" }, h("p", {}, `You changed ${nOver} result(s). They are sent with your decision.`)) : null,
+      S.r.whyError ? h("p", { class: "why-disabled", role: "alert" }, S.r.whyError) : null,
+      h("div", { class: "checklist" }, rows),
+    ], {
+      onSave: () => {
+        const missing = Object.entries(S.r.overrides).filter(([, o]) => !o.note.trim()).map(([id]) => id);
+        S.r.whyError = missing.length ? `Give a reason for your change to ${missing.join(", ")}.` : null;
+        if (missing.length) { render(); return false; }
+        return true;
+      },
+    });
 }
 
-function criterionRow({ rule, res, ov, status }, editing, showSection) {
+function evidenceLine(e) {
+  return h("div", { class: `evidence ${e.verified ? "" : "unverified"}` },
+    h("button", { class: "btn btn-small", onclick: () => openPage(e.page, e.quote) }, `Page ${e.page}`),
+    h("div", {}, h("q", {}, e.quote),
+      e.verified ? null : h("div", { class: "why-disabled" }, "Not found on this page. Open the page and check.")));
+}
+
+// One IHH criterion: check mark + IHH's wording; the reason opens below.
+function criterionItem({ rule, res, ov, status }, editing, showSection) {
   let words;
   if (rule.superseded_by) words = [`Replaced by ${rule.superseded_by}`, "b-off"];
   else if (!res) words = ["Not checked", "b-warn"];
   else words = resultWords(rule.kind, status);
+  // An unverified quote never reads as a plain check mark.
+  const unverified = res && res.evidence.some((e) => !e.verified);
+  const cls = unverified && words[1] === "b-ok" ? "b-warn" : words[1];
 
-  const why = [];
+  const body = [];
+  if (showSection) body.push(h("p", { class: "small muted" }, rule.section));
   if (rule.superseded_by) {
-    why.push(h("p", {}, "IHH's admission criteria outline takes priority over the referral form here. See ", rule.superseded_by, "."));
+    body.push(h("p", {}, "IHH's admission criteria outline takes priority over the referral form here. See ", rule.superseded_by, "."));
   } else if (!res) {
-    why.push(h("p", { class: "why-disabled" }, "The AI did not return a result for this criterion. Check it yourself."));
+    body.push(h("p", { class: "why-disabled" }, "The AI did not return a result for this criterion. Check it yourself."));
   } else {
-    why.push(h("p", {}, res.reasoning, res.confidence === "low" ? h("span", { class: "muted" }, " (the AI is not sure)") : null));
-    if (res.answer) why.push(h("p", {}, h("strong", {}, "Answer: "), res.answer));
-    if (res.hospital_question) why.push(h("p", {}, h("strong", {}, "Ask the hospital: "), res.hospital_question));
-    for (const e of res.evidence) why.push(evidenceLine(e));
-    if (ov && !editing) why.push(h("p", {}, h("strong", {}, "Your reason: "), ov.note));
+    if (ov) body.push(h("p", { class: "edited-mark" }, `Changed by you. The AI said: ${resultWords(rule.kind, res.status)[0]}`));
+    body.push(h("p", {}, h("strong", {}, "Why: "), res.reasoning, res.confidence === "low" ? h("span", { class: "muted" }, " (the AI is not sure)") : null));
+    if (res.answer) body.push(h("p", {}, h("strong", {}, "Answer: "), res.answer));
+    if (res.hospital_question) body.push(h("p", {}, h("strong", {}, "Ask the hospital: "), res.hospital_question));
+    for (const e of res.evidence) body.push(evidenceLine(e));
+    if (ov && !editing) body.push(h("p", {}, h("strong", {}, "Your reason: "), ov.note));
   }
-
-  let override = null;
   if (editing && res && !rule.superseded_by) {
     const sel = h("select", {
       "aria-label": `Change result for ${rule.id}`,
       onchange: (e) => {
         if (e.target.value === "") delete S.r.overrides[rule.id];
         else S.r.overrides[rule.id] = { status: e.target.value, note: (ov && ov.note) || "" };
+        S.r.open[`c:${rule.id}`] = true;
         render(); document.querySelector(`[data-note="${rule.id}"]`)?.focus();
       },
     }, h("option", { value: "" }, "Keep the AI result"),
     ["pass", "fail", "unknown", "needs_human", "not_applicable"].filter((k) => k !== res.status)
       .map((k) => h("option", { value: k, selected: ov && ov.status === k }, `Change to: ${resultWords(rule.kind, k)[0]}`)));
-    override = h("div", { class: "override" }, sel,
-      ov ? h("input", { type: "text", "data-note": rule.id, placeholder: "Why? (required)", value: ov.note, "aria-label": `Reason for changing ${rule.id}`, oninput: (e) => (ov.note = e.target.value) }) : h("span"));
+    body.push(h("div", { class: "override" }, sel,
+      ov ? h("input", { type: "text", "data-note": rule.id, placeholder: "Why? (required)", value: ov.note, "aria-label": `Reason for changing ${rule.id}`, oninput: (e) => (ov.note = e.target.value) }) : h("span")));
   }
 
-  const quiet = (status === "not_applicable" && !ov && rule.kind !== "ask" && rule.kind !== "note") || !!rule.superseded_by;
-  return h("div", { class: `crit ${quiet ? "crit-quiet" : ""}` },
-    h("div", { class: "crit-rule" },
-      h("div", {}, h("span", { class: "rule-id" }, rule.id), showSection ? h("span", { class: "small muted" }, "  ", rule.section) : null),
-      h("div", { class: "crit-text" }, rule.text)),
-    h("div", { class: "crit-result" }, badge(...words),
-      ov && res ? h("div", { class: "edited-mark" }, `Changed by you. The AI said: ${resultWords(rule.kind, res.status)[0]}`) : null),
-    h("div", { class: "crit-why" }, why, override));
+  return checkRow(`c:${rule.id}`, cls,
+    [h("span", { class: "rule-id" }, rule.id), " ", rule.text],
+    [words[0], ov ? " (changed by you)" : "", unverified ? " (check the quote)" : ""],
+    body, { item: true });
 }
 
 // ----- Table 3: patient -----
@@ -828,7 +814,7 @@ function renderDecide() {
   const block = (needBed) => {
     if (S.r.deciding) return "Sending...";
     if (!name) return "Type your name at the top of the page.";
-    if (!c.why || !c.patient) return "Confirm the Reasons and Patient tables first.";
+    if (!c.why || !c.patient) return "Confirm the Admission criteria and Patient tables first.";
     if (badOverride) return `Give a reason for your change to ${badOverride[0]}.`;
     if (needBed && !c.bed) return "Confirm the Bed table first.";
     if (needBed && !S.r.chosenBed) return "There is no bed to assign.";
@@ -842,7 +828,7 @@ function renderDecide() {
       why && !S.r.deciding ? h("p", { class: "why-disabled" }, why) : null);
   };
 
-  const checklist = [["bed", "Bed"], ["why", "Reasons"], ["patient", "Patient information"]];
+  const checklist = [["bed", "Bed"], ["why", "Admission criteria"], ["patient", "Patient information"]];
   return h("div", { class: "stack" },
     h("div", {},
       h("h1", {}, "Make the decision"),

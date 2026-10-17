@@ -9,13 +9,15 @@
    **Confirm** and **Edit**:
    - *Bed*: held bed + other matches (`/bed-matches`), county used for matching. Edit = choose another bed or change
      the county (`POST /county`, which re-holds a bed).
-   - *Why*: review reasons, contradictions, unverified quotes, questions for the hospital, then the **admission
-     criteria checklist**: every IHH criterion from `GET /api/criteria` in the outline's order (general criteria,
-     requirements, exclusions, arrangements, documents, accepted conditions by body system, questions, referral form
-     screen). Each line shows IHH's wording, a result phrased for its kind ("Met", "Not present", "In the packet",
-     "Can't tell from the packet"), and the AI's reason with page-linked quotes. Groups needing attention open first;
-     superseded form rules say which outline rule replaces them; a criterion with no AI result shows "Not checked".
-     Edit = override a criterion's result; a reason is required (`rule_overrides`).
+   - *Admission criteria* (table 2): a checklist. At first glance only the main criteria show, each with a big
+     check mark (clear), cross (not clear), question mark (needs checking) or "i": general criteria, requirements,
+     exclusions, arrangements, documents, accepted conditions by body system, IHH's questions, the referral form
+     screen, plus "pages of the packet agree", "questions for the hospital" and the AI's step-by-step path. Opening a
+     main criterion lists every IHH criterion in it (from `GET /api/criteria`) with its own mark and result
+     ("Met", "Not present", "In the packet", "Can't tell from the packet"); opening one shows why, with page-linked
+     quotes. An unverified quote never shows a plain check mark. Superseded form rules name the outline rule that
+     replaces them; a criterion with no AI result shows "Not checked". Edit = override a criterion's result inside
+     its dropdown; a reason is required (`rule_overrides`).
    - *Patient*: `summary` fields, `null` shown as "Unknown". Edit = corrections, sent as decision `notes`
      (the API has no patient-edit route, so the AI analysis itself is not changed).
 3. **Decide**: Approve (all three tables confirmed + a bed), Request info or Deny (Why + Patient confirmed). Then the
