@@ -22,7 +22,7 @@ def setup(tmp_path):
     eng = make_engine("sqlite://")
     SQLModel.metadata.create_all(eng)
     s = Session(eng)
-    s.add(Site(id="sa", name="Demo Site A"))
+    s.add(Site(id="sa", name="Demo Site A", county="Orange", program_type="recuperative_care"))
     s.add_all([Bed(id="M1", site_id="sa", room="101", label="A", sex_designation="male"),
                Bed(id="M2", site_id="sa", room="102", label="A", sex_designation="male")])
     now = datetime(2026, 10, 17)

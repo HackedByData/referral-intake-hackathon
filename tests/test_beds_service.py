@@ -15,7 +15,7 @@ def session():
     engine = make_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as s:
-        s.add(Site(id="sa", name="Site A (demo)"))
+        s.add(Site(id="sa", name="Site A (demo)", county="Orange", program_type="recuperative_care"))
         s.add_all([
             Bed(id="M1", site_id="sa", room="101", label="A", sex_designation="male"),
             Bed(id="M2", site_id="sa", room="102", label="A", sex_designation="male", wheelchair_accessible=True, ground_floor=True),
@@ -28,7 +28,7 @@ def session():
 
 
 def needs(**kw):
-    base = dict(sex="male", wheelchair=False, mobility_aid=None, oxygen=False, isolation=False)
+    base = dict(sex="male", wheelchair=False, mobility_aid=None, oxygen=False, isolation=False, county="Orange")
     base.update(kw)
     return BedNeeds(**base)
 
@@ -140,3 +140,21 @@ def test_update_status_on_assigned_bed_refused(session):
 def test_create_duplicate_bed_raises(session):
     with pytest.raises(service.BedExists):
         service.create_bed(session, BedCreate(site="Site A (demo)", room="101", label="A", id="M1"))
+
+
+def test_unknown_county_matches_nothing(session):
+    assert service.find_matches(session, needs(county=None)) == []
+
+
+def test_county_and_program_filters(session):
+    session.add(Site(id="la", name="LA Site (demo)", county="Los Angeles", program_type="recuperative_care"))
+    session.add(Site(id="prk", name="Roomkey (demo)", county="Orange", program_type="project_roomkey"))
+    session.add(Site(id="off", name="Inactive (demo)", county="Orange", program_type="recuperative_care", active=False))
+    session.add_all([Bed(id="LA1", site_id="la", room="1", label="A", sex_designation="male"),
+                     Bed(id="PRK1", site_id="prk", room="1", label="A", sex_designation="male"),
+                     Bed(id="OFF1", site_id="off", room="1", label="A", sex_designation="male")])
+    session.commit()
+    orange = {o.bed_id for o in service.find_matches(session, needs(), limit=20)}
+    assert "LA1" not in orange and "PRK1" not in orange and "OFF1" not in orange and "M1" in orange
+    la = [o.bed_id for o in service.find_matches(session, needs(county=" los angeles County "), limit=20)]
+    assert la == ["LA1"]

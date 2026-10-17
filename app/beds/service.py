@@ -90,9 +90,24 @@ def _compatible(bed: Bed, needs: BedNeeds) -> list[str] | None:
     return notes
 
 
+MATCHABLE_PROGRAMS = ("recuperative_care",)
+
+
+def _norm_county(c: str | None) -> str:
+    return (c or "").strip().lower().removesuffix(" county")
+
+
 def find_matches(session: Session, needs: BedNeeds, limit: int = 3, for_referral: str | None = None) -> list[BedOption]:
+    """Hard filters: active recuperative-care facility in the patient's county. Unknown county -> no matches."""
+    county = _norm_county(needs.county)
+    if not county:
+        return []
+    sites = {s.id: s for s in session.exec(select(Site)).all()
+             if s.active and s.program_type in MATCHABLE_PROGRAMS and _norm_county(s.county) == county}
     candidates = []
     for bed in session.exec(select(Bed)).all():
+        if bed.site_id not in sites:
+            continue
         if not _is_available(session, bed, for_referral):
             continue
         notes = _compatible(bed, needs)
@@ -213,7 +228,10 @@ def update_bed(session: Session, bed_id: str, data: BedUpdate) -> Bed:
 def to_view(session: Session, bed: Bed) -> BedView:
     h = _active_hold(session, bed.id)
     a = _active_assignment(session, bed.id)
-    return BedView(id=bed.id, site=_site_name(session, bed.site_id), room=bed.room, label=bed.label,
+    site = session.get(Site, bed.site_id)
+    return BedView(id=bed.id, site=site.name if site else bed.site_id, site_id=bed.site_id,
+                   county=site.county if site else None,
+                   program_type=site.program_type if site else "unknown", room=bed.room, label=bed.label,
                    sex_designation=bed.sex_designation, wheelchair_accessible=bed.wheelchair_accessible,
                    ground_floor=bed.ground_floor, oxygen_ok=bed.oxygen_ok, isolation_ok=bed.isolation_ok,
                    status=effective_status(session, bed), notes=bed.notes,
@@ -240,7 +258,8 @@ def summary(session: Session) -> BedSummary:
         sc.total += 1
         sc.available += v.status == "available"
     return BedSummary(total=len(views), available=count("available"), held=count("held"),
-                      occupied=count("occupied"), out_of_service=count("out_of_service"), by_site=list(sites.values()))
+                      occupied=count("occupied"), out_of_service=count("out_of_service"), by_site=list(sites.values()),
+                      needs_cleaning=count("needs_cleaning"))
 
 
 def list_assignments(session: Session, active_only: bool = True) -> list[AssignmentView]:

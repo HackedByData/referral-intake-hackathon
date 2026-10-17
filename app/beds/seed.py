@@ -1,7 +1,7 @@
 """INVENTED demo beds so the prototype works before IHH's real sheet is imported."""
 from sqlmodel import Session, select
 
-from app.beds.models import Bed
+from app.beds.models import Bed, Site
 from app.beds.service import create_bed
 from app.schemas import BedCreate
 
@@ -37,5 +37,12 @@ def seed_demo_beds(session: Session) -> int:
                                             isolation_ok=iso, notes="demo data"))
         bed.status = status
         session.add(bed)
+    # Placeholder facility attributes so matching works in the demo (invented).
+    for site_id, county in (("demo-site-a", "Orange"), ("demo-site-b", "Los Angeles")):
+        site = session.get(Site, site_id)
+        if site:
+            site.county, site.program_type = county, "recuperative_care"
+            site.notes = "POC placeholder county/program"
+            session.add(site)
     session.commit()
     return len(DEMO)

@@ -1,4 +1,4 @@
-"""Bed management tables. Stored bed.status is available|occupied|out_of_service; 'held' is derived from Hold."""
+"""Bed management tables. Stored bed.status is available|occupied|needs_cleaning|out_of_service; 'held' is derived from Hold."""
 from datetime import date
 
 from pydantic import NaiveDatetime
@@ -6,8 +6,15 @@ from sqlmodel import Field, SQLModel
 
 
 class Site(SQLModel, table=True):
+    """A facility (one census sheet)."""
     id: str = Field(primary_key=True)
     name: str
+    county: str | None = None
+    program_type: str = "unknown"  # recuperative_care | project_roomkey | shelter | other | unknown
+    address: str = ""
+    phone: str = ""
+    notes: str = ""
+    active: bool = True
 
 
 class Bed(SQLModel, table=True):
@@ -36,9 +43,20 @@ class Hold(SQLModel, table=True):
 class Assignment(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     bed_id: str = Field(foreign_key="bed.id", index=True)
-    referral_id: str = Field(index=True)
+    referral_id: str | None = Field(default=None, index=True)
     client_label: str
     start_date: date
     expected_end_date: date | None = None
     released_at: NaiveDatetime | None = None
     status: str = "active"
+    source: str = "referral"  # referral | census | seed
+    client_id: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    gender: str | None = None
+    intake_date: date | None = None
+    exit_date: date | None = None
+    payer: str | None = None
+    case_manager: str | None = None
+    stay_notes: str = ""
+    extra_json: str = "{}"  # every other census column, verbatim (patient info section)

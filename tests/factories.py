@@ -50,7 +50,8 @@ def make_summary(**overrides) -> CaseSummary:
         one_liner="Adult man referred after inpatient stay for left-leg cellulitis; walks with a walker.",
         age="54", sex="male", admitting_diagnosis="cellulitis", housing_situation="unhoused",
         has_ihh_referral_form=True, documents_present=[], key_findings=[], conflicts=[],
-        bed_needs=BedNeeds(sex="male", wheelchair=False, mobility_aid="walker", oxygen=False, isolation=False),
+        bed_needs=BedNeeds(sex="male", wheelchair=False, mobility_aid="walker", oxygen=False, isolation=False,
+                           county="Orange"),
     )
     base.update(overrides)
     return CaseSummary(**base)

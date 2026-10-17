@@ -22,7 +22,9 @@ ReferralStatus = Literal[
     "uploaded", "transcribing", "analyzing", "ready_for_review",
     "approved", "denied", "info_requested", "failed",
 ]
-BedStatus = Literal["available", "held", "occupied", "out_of_service"]
+BedStatus = Literal["available", "held", "occupied", "needs_cleaning", "out_of_service"]
+ProgramType = Literal["recuperative_care", "project_roomkey", "shelter", "other", "unknown"]
+StaySource = Literal["referral", "census", "seed"]
 SexDesignation = Literal["male", "female", "any"]
 
 
@@ -91,6 +93,16 @@ class BedNeeds(BaseModel):
     oxygen: bool | None = None
     isolation: bool | None = None
     notes: str | None = None
+    county: str | None = Field(default=None, description="Always null: the system fills this after county review")
+
+
+class CountySuggestion(BaseModel):
+    """System-filled (never by the model): county used for bed matching."""
+    county: str | None = None
+    candidates: list[str] = []
+    basis: str = ""
+    confirmed: bool = False
+    confirmed_by: str | None = None
 
 
 class DocumentPresence(BaseModel):
@@ -109,11 +121,15 @@ class CaseSummary(BaseModel):
     key_findings: list[str] = []
     conflicts: list[Conflict] = []
     bed_needs: BedNeeds
+    health_plan: str | None = Field(default=None, description="Health plan / payer named in the packet (e.g. 'CalOptima'), exactly as written; null if none")
+    health_plan_evidence: list[Evidence] = Field(default=[], description="Verbatim quotes showing the health plan")
+    location_clues: list[Evidence] = Field(default=[], description="Verbatim quotes naming a city or county where the patient lives or is hospitalized (not [REDACTED] text)")
+    suggested_county: CountySuggestion | None = Field(default=None, description="Always null: filled by the system")
 
 
 # ---------- Decision tree ----------
 class ReviewReason(BaseModel):
-    kind: Literal["missing_info", "judgment_call", "unverified_evidence", "conflict", "no_bed"]
+    kind: Literal["missing_info", "judgment_call", "unverified_evidence", "conflict", "no_bed", "county_needed"]
     rule_ids: list[str]
     detail: str
 
@@ -219,6 +235,7 @@ class ReferralView(ReferralListItem):
     one_liner: str | None = None
     recommendation: Recommendation | None = None
     coordinator_decision: CoordinatorDecisionRecord | None = None
+    county: CountySuggestion | None = None
 
 
 class ReferralDetails(BaseModel):
@@ -233,9 +250,34 @@ class ReferralDetails(BaseModel):
     timings: dict[str, float]
 
 
+class StaySummary(BaseModel):
+    assignment_id: int
+    source: StaySource
+    referral_id: str | None = None
+    client_id: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    gender: str | None = None
+    intake_date: date | None = None
+    expected_exit_date: date | None = None
+    payer: str | None = None
+
+
+class StayDetail(StaySummary):
+    status: Literal["active", "released"]
+    exit_date: date | None = None
+    case_manager: str | None = None
+    notes: str = ""
+    extra: dict[str, Any] = {}
+    released_at: datetime | None = None
+
+
 class BedView(BaseModel):
     id: str
     site: str
+    site_id: str = ""
+    county: str | None = None
+    program_type: ProgramType = "unknown"
     room: str
     label: str
     sex_designation: SexDesignation
@@ -248,6 +290,35 @@ class BedView(BaseModel):
     referral_id: str | None = None
     assignment_id: int | None = None
     hold_expires_at: datetime | None = None
+    stay: StaySummary | None = None
+
+
+class BedDetail(BaseModel):
+    bed: BedView
+    current_stay: StayDetail | None = None
+    history: list[StaySummary] = []
+
+
+class FacilityView(BaseModel):
+    id: str
+    name: str
+    county: str | None = None
+    program_type: ProgramType = "unknown"
+    address: str = ""
+    phone: str = ""
+    notes: str = ""
+    active: bool = True
+    total_beds: int = 0
+    available_beds: int = 0
+
+
+class FacilityUpdate(BaseModel):
+    county: str | None = None
+    program_type: ProgramType | None = None
+    address: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    active: bool | None = None
 
 
 class BedCreate(BaseModel):
@@ -269,7 +340,7 @@ class BedUpdate(BaseModel):
     ground_floor: bool | None = None
     oxygen_ok: bool | None = None
     isolation_ok: bool | None = None
-    status: Literal["available", "out_of_service"] | None = None
+    status: Literal["available", "needs_cleaning", "out_of_service"] | None = None
     notes: str | None = None
 
 
@@ -286,17 +357,40 @@ class BedSummary(BaseModel):
     occupied: int
     out_of_service: int
     by_site: list[SiteCount]
+    needs_cleaning: int = 0
 
 
 class AssignmentView(BaseModel):
     id: int
     bed_id: str
-    referral_id: str
+    referral_id: str | None = None
     client_label: str
     start_date: date
     expected_end_date: date | None = None
     released_at: datetime | None = None
     status: Literal["active", "released"]
+
+
+class CensusSheetReport(BaseModel):
+    sheet: str
+    facility_id: str | None = None
+    beds_created: int = 0
+    beds_updated: int = 0
+    stays_created: int = 0
+    stays_closed: int = 0
+    skipped: list[str] = []
+    conflicts: list[str] = []
+
+
+class CensusImportReport(BaseModel):
+    facilities_created: int = 0
+    sheets: list[CensusSheetReport] = []
+    skipped_sheets: list[str] = []
+
+
+class CountyConfirm(BaseModel):
+    county: str
+    coordinator: str
 
 
 class BedImportReport(BaseModel):
