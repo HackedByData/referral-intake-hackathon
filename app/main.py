@@ -1,9 +1,11 @@
 """FastAPI entrypoint: uvicorn app.main:app --reload"""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 
 from app.api import audit as audit_api
@@ -41,3 +43,9 @@ app.include_router(audit_api.router)
 def health():
     s = get_settings()
     return {"ok": True, "model": s.model, "api_key_configured": bool(s.anthropic_api_key)}
+
+
+# Coordinator UI (web/, plain HTML/JS). Mounted last so /api routes win.
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+if WEB_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

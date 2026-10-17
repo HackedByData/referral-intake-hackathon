@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IHH Referral Intake</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-name">IHH Referral Intake</span>
+      <span class="brand-sub">Recuperative care beds</span>
+    </div>
+    <label class="whoami">
+      <span>Your name</span>
+      <input id="coordinator" type="text" autocomplete="name" placeholder="Type your name">
+    </label>
+  </header>
+
+  <nav class="steps" aria-label="Main">
+    <button class="step" data-tab="upload"><span class="step-n">1</span>Upload packet</button>
+    <button class="step" data-tab="review"><span class="step-n">2</span>Check results</button>
+    <button class="step" data-tab="decide"><span class="step-n">3</span>Decide</button>
+    <button class="step step-beds" data-tab="beds">Beds</button>
+  </nav>
+
+  <div id="banner" class="demo-banner" hidden></div>
+  <main id="view" tabindex="-1"></main>
+
+  <dialog id="dialog"></dialog>
+
+  <script src="mock.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
