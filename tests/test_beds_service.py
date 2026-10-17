@@ -120,3 +120,23 @@ def test_create_and_update_bed(session):
     assert service.to_view(session, session.get(Bed, b.id)).status == "out_of_service"
     with pytest.raises(service.BedNotFound):
         service.update_bed(session, "nope", BedUpdate(notes="x"))
+
+
+def test_discharge_twice_does_not_free_reassigned_bed(session):
+    a1 = service.assign(session, "M1", "R1", client_label="R1")
+    service.discharge(session, a1.id)
+    service.assign(session, "M1", "R2", client_label="R2")
+    service.discharge(session, a1.id)
+    assert session.get(Bed, "M1").status == "occupied"
+
+
+def test_update_status_on_assigned_bed_refused(session):
+    service.assign(session, "M1", "R1", client_label="R1")
+    with pytest.raises(service.BedUnavailable):
+        service.update_bed(session, "M1", BedUpdate(status="available"))
+    service.update_bed(session, "M1", BedUpdate(notes="ok"))
+
+
+def test_create_duplicate_bed_raises(session):
+    with pytest.raises(service.BedExists):
+        service.create_bed(session, BedCreate(site="Site A (demo)", room="101", label="A", id="M1"))

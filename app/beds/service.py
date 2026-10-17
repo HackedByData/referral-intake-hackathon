@@ -18,6 +18,10 @@ class BedNotFound(Exception):
     pass
 
 
+class BedExists(Exception):
+    pass
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -154,10 +158,15 @@ def discharge(session: Session, assignment_id: int) -> Assignment:
     a = session.get(Assignment, assignment_id)
     if a is None:
         raise BedNotFound(f"assignment {assignment_id}")
+    if a.status == "released":
+        return a
     a.status, a.released_at = "released", utcnow()
+    session.add(a)
+    session.flush()
     bed = session.get(Bed, a.bed_id)
-    bed.status = "available"
-    session.add_all([a, bed])
+    if bed is not None and bed.status == "occupied" and _active_assignment(session, bed.id) is None:
+        bed.status = "available"
+        session.add(bed)
     session.commit()
     session.refresh(a)
     return a
@@ -174,8 +183,10 @@ def _ensure_site(session: Session, name: str) -> Site:
 
 
 def create_bed(session: Session, data: BedCreate) -> Bed:
-    site = _ensure_site(session, data.site)
     bed_id = data.id or slug(f"{data.site}-{data.room}-{data.label}")
+    if session.get(Bed, bed_id) is not None:
+        raise BedExists(bed_id)
+    site = _ensure_site(session, data.site)
     bed = Bed(id=bed_id, site_id=site.id, room=data.room, label=data.label,
               **data.model_dump(exclude={"id", "site", "room", "label"}))
     session.add(bed)
@@ -188,7 +199,10 @@ def update_bed(session: Session, bed_id: str, data: BedUpdate) -> Bed:
     bed = session.get(Bed, bed_id)
     if bed is None:
         raise BedNotFound(bed_id)
-    for k, v in data.model_dump(exclude_none=True).items():
+    changes = data.model_dump(exclude_none=True)
+    if "status" in changes and changes["status"] != bed.status and _active_assignment(session, bed_id):
+        raise BedUnavailable(f"Bed {bed_id} has an active assignment")
+    for k, v in changes.items():
         setattr(bed, k, v)
     session.add(bed)
     session.commit()

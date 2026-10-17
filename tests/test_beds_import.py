@@ -65,3 +65,28 @@ def test_seed_is_idempotent(session):
     assert seed_demo_beds(session) == 0
     beds = session.exec(select(Bed)).all()
     assert any(b.wheelchair_accessible for b in beds) and any(b.status == "occupied" for b in beds)
+
+
+def test_ragged_csv_row_does_not_crash(session):
+    report = import_beds(session, "beds.csv", b"Site,Room,Bed\nX,1,A,extra\n")
+    assert report.created == 1 and report.errors == []
+
+
+def test_corrupt_xlsx_returns_error(session):
+    report = import_beds(session, "beds.xlsx", b"not a zip")
+    assert report.created == 0 and len(report.errors) == 1
+
+
+def test_reimport_without_status_column_keeps_status(session):
+    import_beds(session, "beds.csv", b"Site,Room,Bed,Status\nX,1,A,Out of service\n")
+    import_beds(session, "beds.csv", b"Site,Room,Bed\nX,1,A\n")
+    assert session.get(Bed, "x-1-a").status == "out_of_service"
+
+
+def test_reimport_never_frees_assigned_bed(session):
+    from app.beds import service
+    import_beds(session, "beds.csv", b"Site,Room,Bed,Status\nX,1,A,Available\n")
+    service.assign(session, "x-1-a", "R1", client_label="R1")
+    report = import_beds(session, "beds.csv", b"Site,Room,Bed,Status\nX,1,A,Available\n")
+    assert session.get(Bed, "x-1-a").status == "occupied"
+    assert any("active assignment" in e for e in report.errors)

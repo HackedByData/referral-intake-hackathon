@@ -64,3 +64,12 @@ def test_assignments_and_discharge(client):
     r = client.post(f"/api/assignments/{aid}/discharge")
     assert r.json()["status"] == "released"
     assert client.post("/api/assignments/9999/discharge").status_code == 404
+
+
+def test_conflicts_return_409(client):
+    with Session(client.engine) as s:
+        service.assign(s, "demo-site-a-102-a", "R1", client_label="R1")
+    r = client.patch("/api/beds/demo-site-a-102-a", json={"status": "available"})
+    assert r.status_code == 409
+    r = client.post("/api/beds", json={"site": "Demo Site A", "room": "102", "label": "A"})
+    assert r.status_code == 409

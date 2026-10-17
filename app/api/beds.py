@@ -22,7 +22,10 @@ def bed_summary(session: Session = Depends(get_session)):
 
 @router.post("/beds", response_model=BedView, status_code=201)
 def create_bed(data: BedCreate, session: Session = Depends(get_session)):
-    return service.to_view(session, service.create_bed(session, data))
+    try:
+        return service.to_view(session, service.create_bed(session, data))
+    except service.BedExists:
+        raise HTTPException(409, "A bed with this id already exists")
 
 
 @router.patch("/beds/{bed_id}", response_model=BedView)
@@ -31,6 +34,8 @@ def update_bed(bed_id: str, data: BedUpdate, session: Session = Depends(get_sess
         return service.to_view(session, service.update_bed(session, bed_id, data))
     except service.BedNotFound:
         raise HTTPException(404, f"Bed {bed_id} not found")
+    except service.BedUnavailable as e:
+        raise HTTPException(409, str(e))
 
 
 @router.post("/beds/import", response_model=BedImportReport)
