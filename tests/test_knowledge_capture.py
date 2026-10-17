@@ -167,3 +167,15 @@ def test_county_rematch_applies_bed_preference_and_precedents(client):
         r = AnalysisResult.model_validate_json(s.get(Referral, "R1").result_json)
         assert lesson_id in r.knowledge_used and prec_id in r.knowledge_used
         assert {v.id: v.times_applied for v in store.list_lessons(s)}[lesson_id] == 1
+
+
+def test_details_exposes_knowledge_used(client):
+    c, engine = client
+    with Session(engine) as s:
+        ref = s.get(Referral, "R1")
+        from app.schemas import AnalysisResult
+        r = AnalysisResult.model_validate_json(ref.result_json).model_copy(update={"knowledge_used": [4, 2]})
+        ref.result_json = r.model_dump_json()
+        s.add(ref)
+        s.commit()
+    assert c.get("/api/referrals/R1/details").json()["knowledge_used"] == [4, 2]

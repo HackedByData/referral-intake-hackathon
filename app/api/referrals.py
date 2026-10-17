@@ -115,7 +115,7 @@ def get_details(referral_id: str, session: Session = Depends(get_session)):
              for p in result.packet.pages]
     return ReferralDetails(id=ref.id, status=ref.status, prompt_version=result.prompt_version, model=result.model,
                            summary=result.summary, rule_results=views, recommendation=result.recommendation,
-                           pages=pages, timings=result.timings)
+                           pages=pages, timings=result.timings, knowledge_used=result.knowledge_used)
 
 
 @router.get("/{referral_id}/pages/{page}", response_model=PageMarkdown)

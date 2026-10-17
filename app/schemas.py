@@ -253,6 +253,7 @@ class ReferralDetails(BaseModel):
     recommendation: Recommendation
     pages: list[PageInfo]
     timings: dict[str, float]
+    knowledge_used: list[int] = []
 
 
 class StaySummary(BaseModel):
