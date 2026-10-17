@@ -21,4 +21,5 @@ then `docs/superpowers/plans/2026-10-17-referral-intake.md`. Module notes are in
 - Shared types: `app/schemas.py`. Rule IDs come from `criteria/admission-criteria.json`.
 - Model: `claude-opus-5-5` via `app/llm.py` only (adaptive thinking, explicit effort, refusal handling).
 - When criteria are unclear or sources disagree, surface it to the coordinator. Don't pick silently.
+- `SEED_MODE` (poc default | demo | none) picks the bed seed; `init_db` auto-backs-up an incompatible `data/app.db` to `app.db.bak-<timestamp>`.
 - Commit often; never commit `data/`, PDFs, or `.env`.

@@ -66,8 +66,8 @@ The coordinator always makes the final call. The AI decision is a recommendation
 | GET | `/api/beds/{bed_id}` | | `BedDetail` (bed + current stay with patient info + history) · `404` |
 | GET | `/api/facilities` | | `FacilityView[]` |
 | PATCH | `/api/facilities/{id}` | `FacilityUpdate` | `FacilityView` · `404` |
-| POST | `/api/census/import` | multipart `file` (IHH census .xlsx) | `CensusImportReport` · `400` |
-| POST | `/api/referrals/{id}/county` | `CountyConfirm` | `ReferralView` · `404` · `409` |
+| POST | `/api/census/import` | multipart `file` (IHH census .xlsx) | `CensusImportReport` · `400` · `413` (over 20 MB) |
+| POST | `/api/referrals/{id}/county` | `CountyConfirm` | `ReferralView` · `404` · `409` · `422` (empty county/coordinator) |
 | GET | `/api/assignments` | `?active=true` (default) | `AssignmentView[]` |
 | POST | `/api/assignments/{id}/discharge` | | `AssignmentView` · `404` |
 | GET | `/api/audit` | `?referral_id=` | `AuditEventView[]` (oldest first) |
@@ -295,7 +295,7 @@ interface FacilityView {                 // v2: one per census sheet
   total_beds: number; available_beds: number;
 }
 
-interface FacilityUpdate {               // v2: all optional
+interface FacilityUpdate {               // v2: all optional; send county: null to clear county; other fields ignore null
   county?: string; program_type?: ProgramType; address?: string; phone?: string; notes?: string; active?: boolean;
 }
 
@@ -313,16 +313,18 @@ interface BedCreate {
 
 interface BedUpdate {                    // all optional; only sent fields change
   sex_designation?: SexDesignation; wheelchair_accessible?: boolean; ground_floor?: boolean;
-  oxygen_ok?: boolean; isolation_ok?: boolean; status?: "available" | "out_of_service"; notes?: string;
+  oxygen_ok?: boolean; isolation_ok?: boolean; status?: "available" | "needs_cleaning" | "out_of_service"; notes?: string;
 }
 
 interface BedSummary {
   total: number; available: number; held: number; occupied: number; out_of_service: number;
+  needs_cleaning: number;
   by_site: { site: string; total: number; available: number }[];
 }
 
 interface AssignmentView {
-  id: number; bed_id: string; referral_id: string; client_label: string;
+  id: number; bed_id: string; referral_id?: string;   // null for census/seed stays
+  client_label: string;
   start_date: string;                    // "2026-10-17"
   expected_end_date?: string;
   released_at?: string;
@@ -432,4 +434,5 @@ interface AuditEventView {
 ## Changelog
 - v1 (2026-10-17): initial contract.
 - v2 (2026-10-17): census-backed BMS + county matching (additive): facilities endpoints, bed detail with patient info, census import, county confirm, `needs_cleaning` bed status, `county_needed` review reason, `ReferralView.county`, `BedView.site_id/county/program_type/stay`, `BedSummary.needs_cleaning`. See §8.
+- v2.1 (2026-10-17): `BedSummary.needs_cleaning`, `BedUpdate.status` accepts `needs_cleaning`, `AssignmentView.referral_id` optional (null for census/seed stays), county route `422`, census route `413`, `FacilityUpdate` null-clears county. Census re-import reports a conflict and leaves the bed unchanged when it has an active hold or a referral stay.
 - v1.1 (2026-10-17): behaviour notes (§7) from code review: nulls, button disabling, 409/404/500 cases, per-row import errors, unverified-evidence reviews. No field or route changes.

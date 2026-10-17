@@ -16,7 +16,11 @@ An Illumination Health + Home (IHH) referral coordinator reads each faxed hospit
 A FastAPI backend with two parts.
 
 1. **Referral intake.** The coordinator uploads a packet PDF. The tool transcribes every page, checks the packet against 155 IHH admission rules, and returns a recommendation (approve, deny or needs_review) with a cited quote and page number for each finding. It also lists open questions for the hospital, matches and holds a bed, and drafts a reply to the hospital. The coordinator decides. Approval assigns the bed and writes a MOCK Kipu EHR payload to disk.
-2. **Bed management.** A small bed system (beds, assignments, discharge, CSV/XLSX import) that replaces the Excel sheet and feeds bed matching.
+2. **Bed management.** A small bed system (beds, assignments, discharge, CSV/XLSX import) that replaces the Excel sheet and feeds bed matching. It is now census-backed and county-aware:
+   - **POC seed.** The default seed is 18 placebo facilities with invented "Test Client" occupants. The counties and programs are placeholders to confirm with IHH.
+   - **Census import.** `POST /api/census/import` takes IHH's census workbook (one sheet per facility) and reports what it created, skipped and could not reconcile.
+   - **County-aware matching.** The AI extracts the health plan with a quote, and `criteria/plan_county.json` maps single-county plans to a county. The coordinator confirms it via `POST /api/referrals/{id}/county`. Only active recuperative-care facilities in that county match.
+   - **Bed detail.** Each bed shows a patient-info section for its current occupant, plus stay history.
 
 The frontend is being built separately in Claude Design against `docs/api-contract.md`.
 
@@ -56,7 +60,7 @@ Eval against IHH's decisions for the 11 real packets (needs `ANTHROPIC_API_KEY`)
 .venv/Scripts/python -m eval.run --packets-dir ../claude-impact-lab-oc/challenges/1-referral-intake/packets --decisions ../claude-impact-lab-oc/challenges/1-referral-intake/eval/decisions.json
 ```
 
-Needs: Python 3.10+ (tested on 3.14) with `venv` and pip, and an Anthropic API key. Settings live in `.env` (see `.env.example`); no keys are in the repo. The packets must be downloaded separately per the event repo and are never committed here. Demo beds are seeded on first start; generated data goes to `data/` (gitignored).
+Needs: Python 3.10+ (tested on 3.14) with `venv` and pip, and an Anthropic API key. Settings live in `.env` (see `.env.example`); no keys are in the repo. The packets must be downloaded separately per the event repo and are never committed here. Beds are seeded on first start according to `SEED_MODE` (`poc` default | `demo` | `none`); generated data goes to `data/` (gitignored). If you ran an older version, the server backs up an incompatible data/app.db automatically.
 
 ## What is real and what is mocked
 
@@ -67,6 +71,9 @@ Needs: Python 3.10+ (tested on 3.14) with `venv` and pip, and an Anthropic API k
 | Quote verification | working |
 | Decision tree (approve / deny / needs_review) | working |
 | Bed management and bed matching | working; the demo beds are invented, real sheets can be imported via CSV/XLSX |
+| Census import | working |
+| Facility counties/programs | placeholders |
+| Bed occupants in seed | invented placebo |
 | Coordinator decision, override audit log | working |
 | Kipu EHR upload | mocked; writes JSON to `data/outbox/kipu/` and connects to nothing |
 | Hospital messages | drafts only; nothing is ever sent |
@@ -88,7 +95,7 @@ Eval scorecard (11 real packets vs IHH's decisions): pending live run — see do
 ## Data and privacy
 
 This project uses only data from the event repo and public sources. It contains no real
-patient or client information. It does not connect to any Illumination Health + Home system.
+patient or client information. It does not connect to any Illumination Health + Home system. The census workbook used for testing is synthetic and kept outside the repo, and the committed seed contains only invented occupants.
 
 ## License
 

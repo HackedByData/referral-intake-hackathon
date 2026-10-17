@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from datetime import date, datetime
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from app.beds.models import Assignment, Bed, Site
 from app.beds.seed import seed_poc_beds
 from app.db import make_engine
 
-REAL_WORKBOOK = Path("C:/Users/devin/UCI/Claude Hackathon/Test Census.xlsx")
+REAL_WORKBOOK = Path(os.getenv("CENSUS_XLSX") or Path(__file__).resolve().parents[1].parent / "Test Census.xlsx")
 
 
 def build_workbook() -> bytes:
@@ -157,6 +158,39 @@ def test_referral_stay_preserved_and_conflict_reported(session):
     assert session.get(Assignment, a.id).status == "active"
     assert session.get(Bed, bed.id).status == "occupied"
     assert not session.exec(select(Assignment).where(Assignment.bed_id == bed.id, Assignment.source == "census")).all()
+
+
+def _stay():
+    return {"client_id": "IF2099-9", "first_name": "Other", "last_name": "P.", "gender": None,
+            "intake_date": None, "expected_exit_date": None, "exit_date": None, "payer": None,
+            "case_manager": None, "notes": "", "extra": {}}
+
+
+def test_active_hold_blocks_census_change_and_conflicts(session):
+    sheets, _ = parsed()
+    census.import_census(session, sheets)
+    service.hold(session, "rc-test-101-b", "ref-held", 4)
+    row = next(r for r in by_sheet(sheets)["RC Test"].rows if r.label == "101-B")
+    row.status, row.stay = "occupied", _stay()
+    rep = census.import_census(session, sheets)
+    rc = next(s for s in rep.sheets if s.sheet == "RC Test")
+    assert "101-B: held for referral ref-held; sheet shows occupied" in rc.conflicts
+    session.expire_all()
+    assert session.get(Bed, "rc-test-101-b").status == "available"
+    assert not session.exec(select(Assignment).where(Assignment.bed_id == "rc-test-101-b")).all()
+
+
+def test_referral_stay_with_empty_row_conflicts(session):
+    sheets, _ = parsed()
+    census.import_census(session, sheets)
+    a = service.assign(session, "rc-test-101-b", "ref-2", "Invented Person")
+    row = next(r for r in by_sheet(sheets)["RC Test"].rows if r.label == "101-B")
+    row.status, row.stay = "available", None
+    rep = census.import_census(session, sheets)
+    rc = next(s for s in rep.sheets if s.sheet == "RC Test")
+    assert any("101-B" in c for c in rc.conflicts)
+    session.expire_all()
+    assert session.get(Assignment, a.id).status == "active" and session.get(Bed, "rc-test-101-b").status == "occupied"
 
 
 def test_existing_facility_county_not_overwritten(session):

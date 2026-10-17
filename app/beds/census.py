@@ -13,7 +13,7 @@ from typing import Any
 import openpyxl
 from sqlmodel import Session, select
 
-from app.beds.models import Assignment, Bed, Site
+from app.beds.models import Assignment, Bed, Hold, Site
 from app.beds.service import slug, utcnow
 from app.schemas import CensusImportReport, CensusSheetReport
 
@@ -263,7 +263,7 @@ def parse_workbook(data: bytes) -> tuple[list[ParsedSheet], list[str]]:
 # ---------- import ----------
 
 def _program_from_name(name: str) -> str:
-    if re.search(r"rc\b|recup", name, re.I):
+    if re.search(r"\brc\b|recup", name, re.I):
         return "recuperative_care"
     if re.search(r"prk", name, re.I):
         return "project_roomkey"
@@ -308,9 +308,18 @@ def _upsert_row(session: Session, site: Site, row: ParsedRow, rep: CensusSheetRe
     session.add(bed)
     session.flush()
     active = session.exec(select(Assignment).where(Assignment.bed_id == bed_id, Assignment.status == "active")).all()
+    hold = session.exec(select(Hold).where(Hold.bed_id == bed_id, Hold.active == True,  # noqa: E712
+                                           Hold.expires_at > utcnow())).first()
+    if hold is not None:
+        rep.conflicts.append(f"{row.label}: held for referral {hold.referral_id}; "
+                             f"sheet shows {'occupied' if row.stay else row.status}")
+        return
     if any(a.source == "referral" for a in active):
         if row.stay is not None:
             rep.conflicts.append(f"{row.label}: sheet shows an occupant but an approved referral holds the bed; left unchanged")
+        else:
+            rep.conflicts.append(f"{row.label}: an approved referral occupies the bed but the sheet shows no occupant "
+                                 f"({row.status}); left unchanged")
         return
     bed.status = row.status
     session.add(bed)

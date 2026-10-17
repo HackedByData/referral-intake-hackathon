@@ -247,15 +247,18 @@ def _stay_detail(a: Assignment) -> StayDetail:
 
 
 def to_view(session: Session, bed: Bed) -> BedView:
-    h = _active_hold(session, bed.id)
-    a = _active_assignment(session, bed.id)
-    site = session.get(Site, bed.site_id)
+    return _build_view(bed, session.get(Site, bed.site_id), _active_hold(session, bed.id),
+                       _active_assignment(session, bed.id))
+
+
+def _build_view(bed: Bed, site: Site | None, h: Hold | None, a: Assignment | None) -> BedView:
+    status = bed.status if bed.status != "available" else ("held" if h else "available")
     return BedView(id=bed.id, site=site.name if site else bed.site_id, site_id=bed.site_id,
                    county=site.county if site else None,
                    program_type=site.program_type if site else "unknown", room=bed.room, label=bed.label,
                    sex_designation=bed.sex_designation, wheelchair_accessible=bed.wheelchair_accessible,
                    ground_floor=bed.ground_floor, oxygen_ok=bed.oxygen_ok, isolation_ok=bed.isolation_ok,
-                   status=effective_status(session, bed), notes=bed.notes,
+                   status=status, notes=bed.notes,
                    referral_id=(a.referral_id if a else (h.referral_id if h else None)),
                    assignment_id=a.id if a else None, hold_expires_at=h.expires_at if h else None,
                    stay=_stay_summary(a) if a else None)
@@ -263,7 +266,15 @@ def to_view(session: Session, bed: Bed) -> BedView:
 
 def list_beds(session: Session, site: str | None = None, status: str | None = None) -> list[BedView]:
     beds = session.exec(select(Bed).order_by(Bed.site_id, Bed.room, Bed.label)).all()
-    views = [to_view(session, b) for b in beds]
+    sites = {s.id: s for s in session.exec(select(Site)).all()}
+    now = utcnow()
+    holds: dict[str, Hold] = {}
+    for h in session.exec(select(Hold).where(Hold.active == True, Hold.expires_at > now)).all():  # noqa: E712
+        holds.setdefault(h.bed_id, h)
+    assigns: dict[str, Assignment] = {}
+    for a in session.exec(select(Assignment).where(Assignment.status == "active")).all():
+        assigns.setdefault(a.bed_id, a)
+    views = [_build_view(b, sites.get(b.site_id), holds.get(b.id), assigns.get(b.id)) for b in beds]
     if site:
         views = [v for v in views if v.site == site or slug(v.site) == slug(site)]
     if status:
