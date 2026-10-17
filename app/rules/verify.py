@@ -55,4 +55,7 @@ def verify_results(results: list[RuleResult], packet: PacketText) -> list[RuleRe
 def verify_summary(summary: CaseSummary, packet: PacketText) -> CaseSummary:
     conflicts = [c.model_copy(update={"statements": verify_evidence(c.statements, packet)})
                  for c in summary.conflicts]
-    return summary.model_copy(update={"conflicts": conflicts})
+    return summary.model_copy(update={
+        "conflicts": conflicts,
+        "health_plan_evidence": verify_evidence(summary.health_plan_evidence, packet),
+        "location_clues": verify_evidence(summary.location_clues, packet)})

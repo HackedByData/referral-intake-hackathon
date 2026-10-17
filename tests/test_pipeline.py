@@ -8,10 +8,10 @@ import app.workflow.models  # noqa: F401
 from app.beds.models import Bed, Site
 from app.db import make_engine
 from app.rules.criteria import load_criteria
-from app.schemas import AnalysisResult, RuleResult
+from app.schemas import AnalysisResult, Evidence, RuleResult
 from app.workflow.models import Referral
 from app.workflow.pipeline import Pipeline, mark_interrupted
-from tests.factories import make_packet, make_summary
+from tests.factories import PAGE_1, PAGE_2, PAGE_3, make_packet, make_summary
 
 
 @pytest.fixture
@@ -30,20 +30,24 @@ def engine(tmp_path, monkeypatch):
     return eng
 
 
+PLAN_PAGE = "AUTHORIZATION\nHealth plan: CalOptima Medi-Cal"
+
+
 async def fake_transcribe(llm, pdf_path, cache_root, concurrency=8, on_progress=None):
     if on_progress:
-        on_progress(3, 3)
-    return make_packet()
+        on_progress(4, 4)
+    return make_packet([PAGE_1, PAGE_2, PAGE_3, PLAN_PAGE])
 
 
-def all_pass_evaluate(results_status="pass"):
+def all_pass_evaluate(results_status="pass", plan="CalOptima"):
     async def evaluate(llm, packet, criteria, concurrency=8):
         results = [RuleResult(rule_id=r.id, status="not_applicable", reasoning="n/a", confidence="high")
                    for r in criteria.rules]
         for r in results:
             if r.rule_id in ("GEN-1",):
                 r.status, r.evidence = results_status, []
-        return make_summary(), results, {"summary": 0.1, "rules": 0.2}
+        ev = [Evidence(page=4, quote="Health plan: CalOptima")] if plan else []
+        return make_summary(health_plan=plan, health_plan_evidence=ev), results, {"summary": 0.1, "rules": 0.2}
     return evaluate
 
 
@@ -70,6 +74,26 @@ async def test_second_referral_cannot_take_held_bed(engine):
         r2 = AnalysisResult.model_validate_json(s.get(Referral, "R2").result_json)
         assert r2.recommendation.held_bed is None
         assert any(r.kind == "no_bed" for r in r2.recommendation.review_reasons)
+
+
+async def test_no_health_plan_means_no_hold_and_county_needed(engine):
+    await pipeline(engine, evaluate=all_pass_evaluate(plan=None)).run("R1")
+    with Session(engine) as s:
+        result = AnalysisResult.model_validate_json(s.get(Referral, "R1").result_json)
+        assert result.recommendation.held_bed is None
+        kinds = [r.kind for r in result.recommendation.review_reasons]
+        assert "county_needed" in kinds and "no_bed" not in kinds
+        assert result.summary.suggested_county.county is None
+        from app.beds.service import held_bed_id
+        assert held_bed_id(s, "R1") is None
+
+
+async def test_plan_sets_suggested_county_and_bed_needs(engine):
+    await pipeline(engine).run("R1")
+    with Session(engine) as s:
+        summary = AnalysisResult.model_validate_json(s.get(Referral, "R1").result_json).summary
+        assert summary.suggested_county.county == "Orange" and not summary.suggested_county.confirmed
+        assert summary.bed_needs.county == "Orange"
 
 
 async def test_failure_marks_failed_with_message(engine):

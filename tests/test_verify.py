@@ -52,6 +52,17 @@ def test_verify_summary_conflicts():
     assert st[0].verified is True and st[1].verified is False
 
 
+def test_verify_summary_verifies_plan_evidence_and_location_clues():
+    packet = make_packet()
+    s = make_summary(health_plan="X", health_plan_evidence=[Evidence(page=1, quote="currently unhoused"),
+                                                           Evidence(page=1, quote="made up plan text zzz")],
+                     location_clues=[Evidence(page=2, quote="Patient denies suicidal ideation"),
+                                     Evidence(page=2, quote="lives in Atlantis")])
+    out = verify_summary(s, packet)
+    assert [e.verified for e in out.health_plan_evidence] == [True, False]
+    assert [e.verified for e in out.location_clues] == [True, False]
+
+
 def test_fuzzy_rejects_flipped_number():
     assert not quote_on_page("Walks 150 ft with front wheeled walker", "Walks 15 ft with front wheeled walker today")
 

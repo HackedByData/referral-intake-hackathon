@@ -26,3 +26,5 @@
 **Testing:** `pytest tests/test_criteria.py tests/test_verify.py tests/test_tree.py tests/test_evaluate.py`.
 
 **Known limits / tuning log:** add findings from eval runs here (rule-ID terms only, never packet quotes).
+
+**County:** the model only extracts `health_plan` and `location_clues` with quotes. `app/rules/county.py` maps the plan to a county using the editable `criteria/plan_county.json` (single-county plans only; clues never infer a county). With no county the tree gives `county_needed` instead of `no_bed`.

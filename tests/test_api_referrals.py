@@ -133,3 +133,77 @@ def test_page_image_without_result_checks_pdf_page_count(client):
         s.commit()
     assert client.get(f"/api/referrals/{rid}/pages/99/image").status_code == 404
     assert client.get(f"/api/referrals/{rid}/pages/1/image").status_code == 200
+
+
+class NoCountyPipeline:
+    """Analysis finished with the county unknown: nothing is held."""
+    def __init__(self, engine):
+        self.engine = engine
+
+    async def run(self, referral_id):
+        from app.schemas import BedNeeds, CountySuggestion
+        a = make_analysis("approve")
+        a.summary.bed_needs = BedNeeds(sex="male", county=None)
+        a.summary.suggested_county = CountySuggestion(basis="No health plan named in the packet.")
+        with Session(self.engine) as s:
+            ref = s.get(Referral, referral_id)
+            ref.status = "ready_for_review"
+            ref.result_json = a.model_dump_json()
+            s.add(ref)
+            s.commit()
+
+
+@pytest.fixture
+def nc_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    engine = make_engine("sqlite://")
+    set_engine(engine)
+    from app.main import app
+    app.dependency_overrides[get_pipeline] = lambda: NoCountyPipeline(engine)
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def test_confirm_county_holds_bed_and_audits(nc_client):
+    rid = upload(nc_client).json()["id"]
+    assert nc_client.get(f"/api/referrals/{rid}").json()["county"]["county"] is None
+    r = nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Pat"})
+    assert r.status_code == 200
+    v = r.json()
+    assert v["county"]["county"] == "Orange" and v["county"]["confirmed"] is True
+    assert v["county"]["confirmed_by"] == "Pat" and v["county"]["basis"].startswith("Confirmed by Pat; AI suggestion: ")
+    assert v["recommendation"]["held_bed"] is not None
+    assert not any(x["kind"] == "county_needed" for x in v["recommendation"]["review_reasons"])
+    actions = [e["action"] for e in nc_client.get("/api/audit", params={"referral_id": rid}).json()]
+    assert "county_confirmed" in actions
+
+
+def test_changing_county_releases_old_hold(nc_client):
+    from app.beds import service
+    from app.db import get_engine
+    rid = upload(nc_client).json()["id"]
+    first = nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Pat"}).json()
+    old = first["recommendation"]["held_bed"]["bed_id"]
+    second = nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Los Angeles", "coordinator": "Pat"}).json()
+    new = second["recommendation"]["held_bed"]["bed_id"]
+    assert new != old and second["county"]["county"] == "Los Angeles"
+    with Session(get_engine()) as s:
+        assert service.held_bed_id(s, rid) == new
+
+
+def test_county_with_no_facility_clears_hold_and_says_no_bed(nc_client):
+    rid = upload(nc_client).json()["id"]
+    nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Pat"})
+    v = nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Nowhere", "coordinator": "Pat"}).json()
+    assert v["recommendation"]["held_bed"] is None
+    assert any(x["kind"] == "no_bed" for x in v["recommendation"]["review_reasons"])
+
+
+def test_county_409_after_approval_and_404(nc_client):
+    rid = upload(nc_client).json()["id"]
+    nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Pat"})
+    assert nc_client.post(f"/api/referrals/{rid}/decision", json={"decision": "approve", "coordinator": "C"}).status_code == 200
+    assert nc_client.post(f"/api/referrals/{rid}/county", json={"county": "Orange", "coordinator": "Pat"}).status_code == 409
+    assert nc_client.post("/api/referrals/R-NOPE/county", json={"county": "Orange", "coordinator": "Pat"}).status_code == 404
