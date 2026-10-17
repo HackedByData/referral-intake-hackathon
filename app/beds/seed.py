@@ -1,8 +1,12 @@
 """INVENTED demo beds so the prototype works before IHH's real sheet is imported."""
+import json
+from datetime import date, datetime, timezone
+from pathlib import Path
+
 from sqlmodel import Session, select
 
-from app.beds.models import Bed, Site
-from app.beds.service import create_bed
+from app.beds.models import Assignment, Bed, Site
+from app.beds.service import create_bed, slug
 from app.schemas import BedCreate
 
 DEMO = [
@@ -46,3 +50,40 @@ def seed_demo_beds(session: Session) -> int:
             session.add(site)
     session.commit()
     return len(DEMO)
+
+
+SEED_POC_PATH = Path(__file__).with_name("seed_poc.json")
+
+
+def seed_poc_beds(session: Session) -> int:
+    """Load the committed POC placebo seed (facilities, beds, invented stays) into an empty DB. Returns beds created."""
+    if session.exec(select(Bed)).first() is not None or not SEED_POC_PATH.exists():
+        return 0
+    data = json.loads(SEED_POC_PATH.read_text(encoding="utf-8"))
+    today = datetime.now(timezone.utc).date()
+    n = 0
+    for f in data["facilities"]:
+        session.add(Site(id=f["id"], name=f["name"], county=f["county"], program_type=f["program_type"],
+                         active=f["active"], notes=f["notes"]))
+        seen: set[str] = set()
+        for b in f["beds"]:
+            bed_id = slug(f"{f['id']}-{b['label']}")
+            if bed_id in seen:
+                continue
+            seen.add(bed_id)
+            session.add(Bed(id=bed_id, site_id=f["id"], room=b["label"], label=b["label"], status=b["status"],
+                            notes=b.get("notes", ""), wheelchair_accessible=b["wheelchair"],
+                            sex_designation=b["sex_designation"]))
+            n += 1
+            st = b.get("stay")
+            if st:
+                session.add(Assignment(
+                    bed_id=bed_id, client_label=f"{st['first_name']} {st['last_name']}",
+                    start_date=date.fromisoformat(st["intake_date"]) if st["intake_date"] else today,
+                    expected_end_date=date.fromisoformat(st["expected_exit_date"]) if st["expected_exit_date"] else None,
+                    source="seed", client_id=st["client_id"], first_name=st["first_name"], last_name=st["last_name"],
+                    gender=st["gender"], intake_date=date.fromisoformat(st["intake_date"]) if st["intake_date"] else None,
+                    payer=st["payer"], case_manager=st["case_manager"], stay_notes=st["notes"],
+                    extra_json=json.dumps(st["extra"])))
+    session.commit()
+    return n
