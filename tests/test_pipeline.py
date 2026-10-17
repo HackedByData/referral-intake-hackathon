@@ -40,20 +40,25 @@ async def fake_transcribe(llm, pdf_path, cache_root, concurrency=8, on_progress=
 
 
 def all_pass_evaluate(results_status="pass", plan="CalOptima"):
-    async def evaluate(llm, packet, criteria, concurrency=8):
+    """Returns (summarize, evaluate_rules) fakes in the shape Pipeline injects."""
+    async def summarize(llm, packet, criteria):
+        ev = [Evidence(page=4, quote="Health plan: CalOptima")] if plan else []
+        return make_summary(health_plan=plan, health_plan_evidence=ev)
+
+    async def evaluate_rules(llm, packet, criteria, concurrency=8, guidance=None):
         results = [RuleResult(rule_id=r.id, status="not_applicable", reasoning="n/a", confidence="high")
                    for r in criteria.rules]
         for r in results:
             if r.rule_id in ("GEN-1",):
                 r.status, r.evidence = results_status, []
-        ev = [Evidence(page=4, quote="Health plan: CalOptima")] if plan else []
-        return make_summary(health_plan=plan, health_plan_evidence=ev), results, {"summary": 0.1, "rules": 0.2}
-    return evaluate
+        return results
+    return summarize, evaluate_rules
 
 
 def pipeline(engine, evaluate=None, transcribe=fake_transcribe):
+    summarize, evaluate_rules = evaluate or all_pass_evaluate()
     return Pipeline(llm=object(), criteria=load_criteria(), engine_getter=lambda: engine,
-                    transcribe=transcribe, evaluate=evaluate or all_pass_evaluate())
+                    transcribe=transcribe, summarize=summarize, evaluate_rules=evaluate_rules)
 
 
 async def test_run_success_stores_result_and_holds_bed(engine):

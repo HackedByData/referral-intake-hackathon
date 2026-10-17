@@ -51,6 +51,7 @@ def _schema_is_stale(engine) -> bool:
 def init_db(engine=None):
     """Create tables. A file DB with an older incompatible schema is backed up and recreated. Returns the engine."""
     import app.beds.models  # noqa: F401  (registers tables)
+    import app.knowledge.models  # noqa: F401
     import app.workflow.models  # noqa: F401
 
     explicit = engine is not None

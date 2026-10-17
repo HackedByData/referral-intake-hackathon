@@ -26,6 +26,10 @@ A FastAPI backend with two parts.
    - **County-aware matching.** The AI extracts the health plan with a quote, and `criteria/plan_county.json` maps single-county plans to a county. The coordinator confirms it via `POST /api/referrals/{id}/county`. Only active recuperative-care facilities in that county match.
    - **Bed detail.** Each bed shows a patient-info section for its current occupant, plus stay history.
 
+3. **Knowledge core.** When a coordinator's decision differs from the AI's (decision, rule override, bed choice, county), the system proposes a de-identified **lesson**. Staff approve it through `/api/knowledge`.
+   - **Used only after approval.** Approved lessons add guidance to the matching rule's prompt, re-rank beds that already passed the hard filters, extend the plan-to-county map, and show similar past cases to the coordinator.
+   - **Transparent.** Every use is listed in `knowledge_used`, a "knowledge" decision-tree step, bed notes and the county basis. The eval ignores lessons unless run with `--with-knowledge`. See `docs/modules/knowledge.md`.
+
 The frontend is being built separately in Claude Design against `docs/api-contract.md`.
 
 **Demo video:** [link]

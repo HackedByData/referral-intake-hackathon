@@ -30,7 +30,27 @@ def _match_key(plan: str, plan_map: dict[str, list[str]]) -> str | None:
     return max(hits, key=lambda k: len(normalize(k))) if hits else None  # longest key wins
 
 
-def suggest_county(summary: CaseSummary, plan_map: dict | None = None) -> CountySuggestion:
+def builtin_plan_counties(plan: str) -> list[str] | None:
+    """Counties the BUILT-IN map lists for this plan name, or None if the plan is not in it."""
+    key = _match_key(plan, load_plan_map()) if plan.strip() else None
+    return None if key is None else load_plan_map()[key]
+
+
+def merge_plan_map(base: dict[str, list[str]], additions: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Learned mappings replace built-in keys that normalize the same way."""
+    drop = {normalize(k) for k in additions}
+    return {**{k: v for k, v in base.items() if normalize(k) not in drop}, **additions}
+
+
+def learned_lesson_id(summary: CaseSummary, plan_map: dict, learned: dict[str, int] | None) -> int | None:
+    """Lesson id when this summary's plan resolved through a learned mapping, else None."""
+    plan = (summary.health_plan or "").strip()
+    key = _match_key(plan, plan_map) if plan else None
+    return (learned or {}).get(normalize(key)) if key is not None else None
+
+
+def suggest_county(summary: CaseSummary, plan_map: dict | None = None,
+                   learned: dict[str, int] | None = None) -> CountySuggestion:
     plan_map = load_plan_map() if plan_map is None else plan_map
     plan = (summary.health_plan or "").strip()
     if not plan:
@@ -45,6 +65,9 @@ def suggest_county(summary: CaseSummary, plan_map: dict | None = None) -> County
         basis = f"Health plan '{plan}'{_pages(verified or summary.health_plan_evidence)} serves {counties[0]} County"
         if not verified:
             basis += " — quote not verified"
+        lesson_id = learned_lesson_id(summary, plan_map, learned)
+        if lesson_id is not None:
+            basis += f" (learned from lesson #{lesson_id})"
         return CountySuggestion(county=counties[0], candidates=list(counties), basis=basis)
     if len(counties) > 1:
         return CountySuggestion(candidates=list(counties),

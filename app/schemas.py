@@ -26,6 +26,8 @@ BedStatus = Literal["available", "held", "occupied", "needs_cleaning", "out_of_s
 ProgramType = Literal["recuperative_care", "project_roomkey", "shelter", "other", "unknown"]
 StaySource = Literal["referral", "census", "seed"]
 SexDesignation = Literal["male", "female", "any"]
+LessonKind = Literal["bed_preference", "rule_interpretation", "decision_precedent", "county_mapping"]
+LessonStatus = Literal["proposed", "approved", "rejected", "retired"]
 
 
 # ---------- Criteria ----------
@@ -114,6 +116,7 @@ class CountySuggestion(BaseModel):
     basis: str = ""
     confirmed: bool = False
     confirmed_by: str | None = None
+    ai_county: str | None = None  # the AI/system suggestion before any coordinator confirm; kept across confirms
 
 
 class DocumentPresence(BaseModel):
@@ -156,7 +159,7 @@ class HospitalQuestion(BaseModel):
 
 
 class TreeStep(BaseModel):
-    node: Literal["exclusions", "must_rules", "general_eligibility", "human_review", "missing_info", "unverified", "conflicts", "bed"]
+    node: Literal["exclusions", "must_rules", "general_eligibility", "human_review", "missing_info", "unverified", "conflicts", "bed", "knowledge"]
     outcome: Literal["triggered", "clear"]
     rule_ids: list[str]
     explanation: str
@@ -179,6 +182,7 @@ class Recommendation(BaseModel):
     tree: list[TreeStep]
     held_bed: BedOption | None = None
     alternative_beds: list[BedOption] = []
+    precedents: list["Precedent"] = []
 
 
 class AnalysisResult(BaseModel):
@@ -189,6 +193,8 @@ class AnalysisResult(BaseModel):
     rule_results: list[RuleResult]
     recommendation: Recommendation
     timings: dict[str, float] = {}
+    knowledge_used: list[int] = []
+    profile: "CaseProfile | None" = None
 
 
 # ---------- Coordinator ----------
@@ -264,6 +270,7 @@ class ReferralDetails(BaseModel):
     recommendation: Recommendation
     pages: list[PageInfo]
     timings: dict[str, float]
+    knowledge_used: list[int] = []
 
 
 class StaySummary(BaseModel):
@@ -422,3 +429,52 @@ class AuditEventView(BaseModel):
     referral_id: str | None
     action: str
     detail: dict[str, Any]
+
+
+# ---------- Knowledge core (learning from coordinator overrides) ----------
+class CaseProfile(BaseModel):
+    """Coarse, de-identified case features used to match lessons. Never holds quotes or names."""
+    county: str | None = None
+    payer: str | None = None
+    sex: Sex = "unknown"
+    wheelchair: bool | None = None
+    oxygen: bool | None = None
+    isolation: bool | None = None
+    mobility_aid: str | None = None
+    systems: list[str] | None = None          # body systems whose eligible rules passed; None = not evaluated yet
+    flagged_rule_ids: list[str] | None = None  # rules that failed or were unknown; None = not evaluated yet
+
+
+class Precedent(BaseModel):
+    lesson_id: int
+    similarity: float
+    summary: str
+    ai_decision: str
+    coordinator_decision: str
+    note: str = ""
+
+
+class LessonView(BaseModel):
+    id: int
+    kind: LessonKind
+    status: LessonStatus
+    summary: str
+    created_at: datetime
+    created_by: str
+    source_referral_id: str | None = None
+    profile: CaseProfile
+    payload: dict[str, Any] = {}
+    note: str = ""
+    needs_note: bool = False
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    times_applied: int = 0
+
+
+class LessonReview(BaseModel):
+    reviewer: str = Field(min_length=1)
+    note: str | None = None
+
+
+Recommendation.model_rebuild()
+AnalysisResult.model_rebuild()

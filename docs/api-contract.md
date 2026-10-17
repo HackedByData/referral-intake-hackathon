@@ -1,6 +1,6 @@
 # API contract (frontend ↔ backend)
 
-**Status:** v2 (2026-10-17), additive over v1. Backend field names match `app/schemas.py` exactly.
+**Status:** v3 (2026-10-17), additive over v1/v2. Backend field names match `app/schemas.py` exactly.
 Changes will be announced and added to the changelog at the bottom.
 
 Base URL (local): `http://localhost:8000`. Interactive docs once the server runs: `http://localhost:8000/docs`.
@@ -70,6 +70,11 @@ The coordinator always makes the final call. The AI decision is a recommendation
 | POST | `/api/referrals/{id}/county` | `CountyConfirm` | `ReferralView` · `404` · `409` · `422` (empty county/coordinator) |
 | GET | `/api/assignments` | `?active=true` (default) | `AssignmentView[]` |
 | POST | `/api/assignments/{id}/discharge` | | `AssignmentView` · `404` |
+| GET | `/api/knowledge` | `?status=&kind=` | `LessonView[]` (oldest first) |
+| GET | `/api/knowledge/export` | | `{ exported_at, count, lessons: LessonView[] }` |
+| POST | `/api/knowledge/{id}/approve` | `LessonReview` | `LessonView` · `404` · `409` unless `proposed` |
+| POST | `/api/knowledge/{id}/reject` | `LessonReview` | `LessonView` · `404` · `409` unless `proposed` |
+| POST | `/api/knowledge/{id}/retire` | `LessonReview` | `LessonView` · `404` · `409` unless `approved` |
 | GET | `/api/audit` | `?referral_id=` | `AuditEventView[]` (oldest first) |
 | GET | `/api/criteria` | | `CriteriaView`: every IHH admission criterion (v2.1) |
 
@@ -121,6 +126,7 @@ interface CountySuggestion {             // v2, system-filled
   basis: string;                         // e.g. "Health plan 'CalOptima' (p.3) serves Orange County"
   confirmed: boolean;                    // true once a coordinator confirmed/overrode it
   confirmed_by?: string;
+  ai_county?: string;                    // v3: the system suggestion before any confirm (kept across confirms)
 }
 
 interface CountyConfirm { county: string; coordinator: string; }   // v2
@@ -134,6 +140,7 @@ interface Recommendation {
   tree: TreeStep[];                      // decision path, in evaluation order
   held_bed?: BedOption;
   alternative_beds: BedOption[];
+  precedents: Precedent[];               // v3: similar past cases where staff-approved lessons say the coordinator differed from the AI
 }
 
 interface ReviewReason {
@@ -146,7 +153,8 @@ interface HospitalQuestion { rule_id: string; question: string; }
 
 interface TreeStep {
   node: "exclusions" | "must_rules" | "general_eligibility" | "human_review"
-      | "missing_info" | "unverified" | "conflicts" | "bed";
+      | "missing_info" | "unverified" | "conflicts" | "bed"
+      | "knowledge";                     // v3: always last; "triggered" = approved lessons were used (explanation lists #ids)
   outcome: "triggered" | "clear";        // triggered = this step found something
   rule_ids: string[];
   explanation: string;
@@ -162,6 +170,7 @@ interface ReferralDetails {
   recommendation: Recommendation;
   pages: PageInfo[];
   timings: Record<string, number>;       // seconds: transcribe, summary, rules, total
+  knowledge_used: number[];              // v3: ids of approved lessons that influenced this analysis
 }
 
 interface RuleResultView {
@@ -435,6 +444,35 @@ interface AuditEventView {
 - `POST /api/beds/import` never fails the whole file for a bad row. Each problem row appears in `errors[]` as `"row N: ..."`. Show them.
 - A passing finding whose quote couldn't be matched to the packet shows up as a `review_reasons[]` item of kind `unverified_evidence` and makes the decision `needs_review`. That's intentional (guardrail).
 
+## 9. Knowledge core (v3)
+
+```ts
+type LessonKind = "bed_preference" | "rule_interpretation" | "decision_precedent" | "county_mapping";
+type LessonStatus = "proposed" | "approved" | "rejected" | "retired";
+
+interface CaseProfile {                  // coarse, de-identified: no quotes, no names
+  county?: string; payer?: string; sex: Sex; wheelchair?: boolean; oxygen?: boolean; isolation?: boolean;
+  mobility_aid?: string; systems?: string[]; flagged_rule_ids?: string[];  // absent = not evaluated; [] = evaluated, none
+}
+interface Precedent {
+  lesson_id: number; similarity: number;   // 0..1, shown only at >= 0.5
+  summary: string; ai_decision: string; coordinator_decision: string; note: string;
+}
+interface LessonView {
+  id: number; kind: LessonKind; status: LessonStatus; summary: string;
+  created_at: string; created_by: string; source_referral_id?: string;
+  profile: CaseProfile; payload: Record<string, any>;
+  note: string; needs_note: boolean;       // needs_note: coordinator left no note; reviewer may add one when approving
+  reviewed_by?: string; reviewed_at?: string; times_applied: number;
+}
+interface LessonReview { reviewer: string; note?: string; }  // a non-empty note replaces the note and clears needs_note
+```
+
+- Lessons are proposed automatically when a coordinator decision differs from the AI (decision, rule override status, bed choice) or the coordinator changes the AI's county. They influence nothing until staff **approve** them. Rejected, proposed and retired lessons are never used.
+- Build a staff queue from `GET /api/knowledge?status=proposed`. Approve/reject only from `proposed`, retire only from `approved`; anything else is `409`.
+- On the review card show `recommendation.precedents` ("similar past cases") and the `knowledge` tree step. Held and alternative beds may carry the match note "Preferred for similar cases (lesson #N)"; a county basis may end with "(learned from lesson #N)". `ReferralDetails.knowledge_used` lists the lesson ids.
+- Lessons never bypass hard rules: beds are only re-ranked among beds that already passed the county/program/availability/sex/ADA filters, and rule lessons only add guidance to the AI's evaluation. The deterministic decision tree and the coordinator's final decision are unchanged.
+
 ## 8. County-aware matching and the bed board (v2)
 
 - Each **facility** (one census sheet) has a `county` and a `program_type`. Referrals only match **active, `recuperative_care` facilities in the patient's county**. Facilities with unknown county never match. POC data uses placeholder counties/programs (facility `notes` say so). Let staff edit them via `PATCH /api/facilities/{id}`.
@@ -443,6 +481,7 @@ interface AuditEventView {
 - **Census import**: `POST /api/census/import` with IHH's workbook; show the per-sheet report (skipped rows and conflicts). Re-importing is safe.
 
 ## Changelog
+- v3 (2026-10-17): knowledge core (additive): `/api/knowledge` list/export/approve/reject/retire, `LessonView`, `LessonReview`, `CaseProfile`, `Precedent`, `Recommendation.precedents`, `TreeStep.node = "knowledge"`, `ReferralDetails.knowledge_used`. See §9.
 - v1 (2026-10-17): initial contract.
 - v2 (2026-10-17): census-backed BMS + county matching (additive): facilities endpoints, bed detail with patient info, census import, county confirm, `needs_cleaning` bed status, `county_needed` review reason, `ReferralView.county`, `BedView.site_id/county/program_type/stay`, `BedSummary.needs_cleaning`. See §8.
 - v2.1 (2026-10-17): `BedSummary.needs_cleaning`, `BedUpdate.status` accepts `needs_cleaning`, `AssignmentView.referral_id` optional (null for census/seed stays), county route `422`, census route `413`, `FacilityUpdate` null-clears county. Census re-import reports a conflict and leaves the bed unchanged when it has an active hold or a referral stay.

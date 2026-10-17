@@ -3,6 +3,9 @@
 The decisions file is read only AFTER every packet has been processed, so it can never influence the review.
 The scorecard holds packet IDs, decisions and rule IDs only: never packet text or quotes.
 
+Approved lessons (the knowledge core) are NOT used unless --with-knowledge is passed, so a scorecard never
+reflects feedback learned from the same packets.
+
 Usage:
   python -m eval.run --packets-dir ../claude-impact-lab-oc/challenges/1-referral-intake/packets \
                      --decisions ../claude-impact-lab-oc/challenges/1-referral-intake/eval/decisions.json
@@ -14,11 +17,16 @@ import sys
 import time
 from pathlib import Path
 
+from sqlmodel import Session
+
 from app.config import get_settings
+from app.db import get_engine
+from app.knowledge import apply as knowledge
+from app.knowledge.profile import from_summary
 from app.ingest.ocr import transcribe_packet
 from app.llm import StructuredLLM
 from app.rules.criteria import load_criteria
-from app.rules.evaluate import evaluate_packet
+from app.rules.evaluate import evaluate_packet, evaluate_rules, summarize
 from app.rules.prompts import PROMPT_VERSION
 from app.rules.tree import decide
 from app.rules.verify import verify_results, verify_summary
@@ -39,11 +47,24 @@ def outcome(truth: str, ours: str) -> str:
     return "FALSE APPROVE" if ours == "approve" else "false deny"
 
 
-async def run_one(pdf: Path, llm, criteria, out_dir: Path) -> dict:
+async def _analyze_with_knowledge(llm, packet, criteria, concurrency):
+    """Same as evaluate_packet, plus guidance from APPROVED lessons. Only used with --with-knowledge."""
+    t0 = time.perf_counter()
+    summary = verify_summary(await summarize(llm, packet, criteria), packet)
+    t1 = time.perf_counter()
+    with Session(get_engine()) as s:
+        guidance, _ = knowledge.rule_guidance(s, [r for rs in criteria.groups().values() for r in rs],
+                                              from_summary(summary))
+    results = await evaluate_rules(llm, packet, criteria, concurrency, guidance)
+    return summary, results, {"summary": t1 - t0, "rules": time.perf_counter() - t1}
+
+
+async def run_one(pdf: Path, llm, criteria, out_dir: Path, with_knowledge: bool = False) -> dict:
     settings = get_settings()
     t0 = time.perf_counter()
     packet = await transcribe_packet(llm, pdf, settings.cache_dir, concurrency=settings.ocr_concurrency)
-    summary, results, timings = await evaluate_packet(llm, packet, criteria, concurrency=settings.rules_concurrency)
+    analyze = _analyze_with_knowledge if with_knowledge else evaluate_packet
+    summary, results, timings = await analyze(llm, packet, criteria, concurrency=settings.rules_concurrency)
     results, summary = verify_results(results, packet), verify_summary(summary, packet)
     rec = decide(criteria.rules, results, summary, EVAL_BED)
     seconds = time.perf_counter() - t0
@@ -96,14 +117,20 @@ def load_truth(path: Path, rows_path: Path) -> dict[str, str]:
         raise SystemExit(1)
 
 
-async def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--packets-dir", required=True, type=Path)
     ap.add_argument("--decisions", required=True, type=Path)
     ap.add_argument("--only", default="")
     ap.add_argument("--concurrency", type=int, default=2)
     ap.add_argument("--out", type=Path, default=Path("docs/eval-scorecard.md"))
-    args = ap.parse_args()
+    ap.add_argument("--with-knowledge", action="store_true",
+                    help="use approved lessons (rule guidance); off by default to avoid self-leakage")
+    return ap
+
+
+async def main() -> None:
+    args = build_parser().parse_args()
     pdfs = sorted(args.packets_dir.glob("R*.pdf"))
     if args.only:
         wanted = {s.strip() for s in args.only.split(",")}
@@ -116,7 +143,7 @@ async def main() -> None:
     async def guarded(p: Path):
         async with sem:
             try:
-                return await run_one(p, llm, criteria, out_dir)
+                return await run_one(p, llm, criteria, out_dir, with_knowledge=args.with_knowledge)
             except Exception as e:
                 print(f"{p.stem}: ERROR {type(e).__name__}: {e}")
                 return {"packet_id": p.stem, "decision": "error", "deciding_rules": [], "review_rules": [],

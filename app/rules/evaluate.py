@@ -45,10 +45,20 @@ def _ensure_coverage(rules: list[Rule], results: list[RuleResult]) -> list[RuleR
             for rule in rules]
 
 
+GUIDANCE_HEADER = ("\n\nCoordinator guidance from past cases (approved by IHH staff; use it to interpret the rule, "
+                   "still cite this packet's evidence):\n")
+
+
+def _guidance_text(rules: list[Rule], guidance: dict[str, list[str]] | None) -> str:
+    lines = [f"- {r.id}: {line}" for r in rules for line in (guidance or {}).get(r.id, [])]
+    return GUIDANCE_HEADER + "\n".join(lines) if lines else ""
+
+
 async def evaluate_group(llm, packet: PacketText, criteria: Criteria, group: str, rules: list[Rule],
-                         _depth: int = 0) -> list[RuleResult]:
-    content = [packet_block(packet, criteria),
-               {"type": "text", "text": RULES_TASK.format(group=group, rules=_rule_lines(rules))}]
+                         _depth: int = 0, guidance: dict[str, list[str]] | None = None) -> list[RuleResult]:
+    # Guidance goes in the per-group task text ONLY: packet_block is the shared cached prefix and must not change.
+    task = RULES_TASK.format(group=group, rules=_rule_lines(rules)) + _guidance_text(rules, guidance)
+    content = [packet_block(packet, criteria), {"type": "text", "text": task}]
     try:
         out = await llm.parse(system=EVAL_SYSTEM, content=content, output=RuleGroupOutput,
                               effort="high", max_tokens=20000)
@@ -58,8 +68,8 @@ async def evaluate_group(llm, packet: PacketText, criteria: Criteria, group: str
             log.warning("Group %s failed (%s); splitting in half and retrying", group, e)
             mid = len(rules) // 2
             a, b = await asyncio.gather(
-                evaluate_group(llm, packet, criteria, f"{group}-1", rules[:mid], _depth + 1),
-                evaluate_group(llm, packet, criteria, f"{group}-2", rules[mid:], _depth + 1))
+                evaluate_group(llm, packet, criteria, f"{group}-1", rules[:mid], _depth + 1, guidance),
+                evaluate_group(llm, packet, criteria, f"{group}-2", rules[mid:], _depth + 1, guidance))
             return a + b
         log.error("Group %s failed: %s", group, e)
         return _ensure_coverage(rules, [])
@@ -74,18 +84,24 @@ def superseded_results(criteria: Criteria) -> list[RuleResult]:
             for r in criteria.superseded()]
 
 
-async def evaluate_packet(llm, packet: PacketText, criteria: Criteria,
-                          concurrency: int = 8) -> tuple[CaseSummary, list[RuleResult], dict[str, float]]:
-    t0 = time.perf_counter()
-    summary = await summarize(llm, packet, criteria)  # first: warms the prompt cache
-    t1 = time.perf_counter()
+async def evaluate_rules(llm, packet: PacketText, criteria: Criteria, concurrency: int = 8,
+                         guidance: dict[str, list[str]] | None = None) -> list[RuleResult]:
     sem = asyncio.Semaphore(concurrency)
 
     async def run(group: str, rules: list[Rule]) -> list[RuleResult]:
         async with sem:
-            return await evaluate_group(llm, packet, criteria, group, rules)
+            return await evaluate_group(llm, packet, criteria, group, rules, guidance=guidance)
 
     groups = criteria.groups()
     chunks = await asyncio.gather(*(run(g, rules) for g, rules in groups.items() if rules))
-    results = [r for chunk in chunks for r in chunk] + superseded_results(criteria)
+    return [r for chunk in chunks for r in chunk] + superseded_results(criteria)
+
+
+async def evaluate_packet(llm, packet: PacketText, criteria: Criteria, concurrency: int = 8,
+                          guidance: dict[str, list[str]] | None = None
+                          ) -> tuple[CaseSummary, list[RuleResult], dict[str, float]]:
+    t0 = time.perf_counter()
+    summary = await summarize(llm, packet, criteria)  # first: warms the prompt cache
+    t1 = time.perf_counter()
+    results = await evaluate_rules(llm, packet, criteria, concurrency, guidance)
     return summary, results, {"summary": t1 - t0, "rules": time.perf_counter() - t1}
