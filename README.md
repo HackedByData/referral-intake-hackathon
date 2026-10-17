@@ -70,6 +70,14 @@ Eval against IHH's decisions for the 11 real packets (needs `ANTHROPIC_API_KEY`)
 
 Needs: Python 3.10+ (tested on 3.14) with `venv` and pip, and an Anthropic API key. Settings live in `.env` (see `.env.example`); no keys are in the repo. The packets must be downloaded separately per the event repo and are never committed here. Beds are seeded on first start according to `SEED_MODE` (`poc` default | `demo` | `none`); generated data goes to `data/` (gitignored). If you ran an older version, the server backs up an incompatible data/app.db automatically.
 
+### Hosted demo (Vercel)
+
+The repo deploys to Vercel as-is (`app/main.py` is auto-detected; `vercel.json` sets the function duration). The hosted
+copy is a **demo**: open `/?demo=1` for the referral flow with invented data, and use the Beds tab, census import and
+county/knowledge APIs live. On Vercel the database lives in `/tmp` per function instance, so data resets and may differ
+between requests, and request bodies are capped at 4.5 MB (most packets are larger). Run real packets and the eval
+locally. Real packets are never uploaded to the hosted demo.
+
 ## What is real and what is mocked
 
 | Part | Status |

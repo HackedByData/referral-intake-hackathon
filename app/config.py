@@ -39,7 +39,8 @@ def get_settings() -> Settings:
     return Settings(
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         model=os.getenv("MODEL", "claude-opus-5-5"),
-        data_dir=Path(os.getenv("DATA_DIR", str(ROOT / "data"))),
+        # Vercel Functions can only write to /tmp (ephemeral, per instance).
+        data_dir=Path(os.getenv("DATA_DIR") or ("/tmp/raft-data" if os.getenv("VERCEL") else str(ROOT / "data"))),
         packets_dir=Path(packets) if packets else None,
         hold_ttl_hours=float(os.getenv("HOLD_TTL_HOURS", "4")),
         ocr_concurrency=int(os.getenv("OCR_CONCURRENCY", "8")),
