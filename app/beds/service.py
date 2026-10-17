@@ -1,4 +1,5 @@
 """Bed management service. The ONLY interface other modules use for beds."""
+import json
 import re
 from datetime import date, datetime, timedelta, timezone
 
@@ -6,7 +7,8 @@ from sqlmodel import Session, select
 
 from app.beds.models import Assignment, Bed, Hold, Site
 from app.schemas import (
-    AssignmentView, BedCreate, BedNeeds, BedOption, BedSummary, BedUpdate, BedView, SiteCount,
+    AssignmentView, BedCreate, BedDetail, BedNeeds, BedOption, BedSummary, BedUpdate, BedView, FacilityUpdate,
+    FacilityView, SiteCount, StayDetail, StaySummary,
 )
 
 
@@ -19,6 +21,10 @@ class BedNotFound(Exception):
 
 
 class BedExists(Exception):
+    pass
+
+
+class FacilityNotFound(Exception):
     pass
 
 
@@ -225,6 +231,21 @@ def update_bed(session: Session, bed_id: str, data: BedUpdate) -> Bed:
     return bed
 
 
+def _stay_summary(a: Assignment) -> StaySummary:
+    return StaySummary(assignment_id=a.id, source=a.source, referral_id=a.referral_id, client_id=a.client_id,
+                       first_name=a.first_name, last_name=a.last_name, gender=a.gender, intake_date=a.intake_date,
+                       expected_exit_date=a.expected_end_date, payer=a.payer)
+
+
+def _stay_detail(a: Assignment) -> StayDetail:
+    try:
+        extra = json.loads(a.extra_json or "{}")
+    except ValueError:
+        extra = {}
+    return StayDetail(**_stay_summary(a).model_dump(), status=a.status, exit_date=a.exit_date,
+                      case_manager=a.case_manager, notes=a.stay_notes, extra=extra, released_at=a.released_at)
+
+
 def to_view(session: Session, bed: Bed) -> BedView:
     h = _active_hold(session, bed.id)
     a = _active_assignment(session, bed.id)
@@ -236,7 +257,8 @@ def to_view(session: Session, bed: Bed) -> BedView:
                    ground_floor=bed.ground_floor, oxygen_ok=bed.oxygen_ok, isolation_ok=bed.isolation_ok,
                    status=effective_status(session, bed), notes=bed.notes,
                    referral_id=(a.referral_id if a else (h.referral_id if h else None)),
-                   assignment_id=a.id if a else None, hold_expires_at=h.expires_at if h else None)
+                   assignment_id=a.id if a else None, hold_expires_at=h.expires_at if h else None,
+                   stay=_stay_summary(a) if a else None)
 
 
 def list_beds(session: Session, site: str | None = None, status: str | None = None) -> list[BedView]:
@@ -267,3 +289,39 @@ def list_assignments(session: Session, active_only: bool = True) -> list[Assignm
     if active_only:
         q = q.where(Assignment.status == "active")
     return [AssignmentView(**a.model_dump()) for a in session.exec(q).all()]
+
+
+def bed_detail(session: Session, bed_id: str) -> BedDetail:
+    bed = session.get(Bed, bed_id)
+    if bed is None:
+        raise BedNotFound(bed_id)
+    stays = session.exec(select(Assignment).where(Assignment.bed_id == bed_id).order_by(Assignment.id.desc())).all()
+    current = next((a for a in stays if a.status == "active"), None)
+    return BedDetail(bed=to_view(session, bed), current_stay=_stay_detail(current) if current else None,
+                     history=[_stay_summary(a) for a in stays if a is not current])
+
+
+def facility_view(session: Session, site: Site) -> FacilityView:
+    beds = session.exec(select(Bed).where(Bed.site_id == site.id)).all()
+    available = sum(1 for b in beds if effective_status(session, b) == "available")
+    return FacilityView(id=site.id, name=site.name, county=site.county, program_type=site.program_type,
+                        address=site.address, phone=site.phone, notes=site.notes, active=site.active,
+                        total_beds=len(beds), available_beds=available)
+
+
+def list_facilities(session: Session) -> list[FacilityView]:
+    return [facility_view(session, s) for s in session.exec(select(Site).order_by(Site.name)).all()]
+
+
+def update_facility(session: Session, facility_id: str, data: FacilityUpdate) -> FacilityView:
+    site = session.get(Site, facility_id)
+    if site is None:
+        raise FacilityNotFound(facility_id)
+    for k, v in data.model_dump(exclude_unset=True).items():
+        if v is None and k != "county":
+            continue  # only county may be cleared
+        setattr(site, k, v)
+    session.add(site)
+    session.commit()
+    session.refresh(site)
+    return facility_view(session, site)

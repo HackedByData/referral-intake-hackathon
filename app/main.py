@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.api import audit as audit_api
 from app.api import beds as beds_api
 from app.api import referrals as referrals_api
-from app.beds.seed import seed_demo_beds
+from app.beds.seed import seed_demo_beds, seed_poc_beds
 from app.config import get_settings
 from app.db import get_engine, init_db
 from app.workflow.pipeline import mark_interrupted
@@ -21,7 +21,11 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(_app: FastAPI):
     init_db()
     with Session(get_engine()) as s:
-        seed_demo_beds(s)
+        mode = get_settings().seed_mode
+        if mode == "demo":
+            seed_demo_beds(s)
+        elif mode == "poc":
+            seed_poc_beds(s)
         mark_interrupted(s)
     yield
 

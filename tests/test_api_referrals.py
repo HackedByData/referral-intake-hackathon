@@ -29,6 +29,7 @@ class FakePipeline:
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("SEED_MODE", "demo")
     engine = make_engine("sqlite://")
     set_engine(engine)
     from app.main import app

@@ -73,3 +73,57 @@ def test_conflicts_return_409(client):
     assert r.status_code == 409
     r = client.post("/api/beds", json={"site": "Demo Site A", "room": "102", "label": "A"})
     assert r.status_code == 409
+
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _workbook() -> bytes:
+    from tests.test_census import build_workbook
+    return build_workbook()
+
+
+def _import(client):
+    return client.post("/api/census/import", files={"file": ("census.xlsx", _workbook(), XLSX)})
+
+
+def test_census_import_and_facilities(client):
+    r = _import(client)
+    assert r.status_code == 200
+    rep = r.json()
+    assert rep["facilities_created"] == 3 and any(s.startswith("Empty") for s in rep["skipped_sheets"])
+    assert {s["sheet"] for s in rep["sheets"]} == {"RC Test", "Twin Test", "Junk Test"}
+    facs = {f["id"]: f for f in client.get("/api/facilities").json()}
+    assert facs["rc-test"]["total_beds"] == 6 and facs["rc-test"]["program_type"] == "recuperative_care"
+    assert facs["rc-test"]["county"] is None
+    assert "demo-site-a" in facs  # seeded demo sites are listed too
+
+
+def test_census_import_rejects_non_xlsx(client):
+    r = client.post("/api/census/import", files={"file": ("census.csv", b"a,b", "text/csv")})
+    assert r.status_code == 400
+    r = client.post("/api/census/import", files={"file": ("census.xlsx", b"not a zip", XLSX)})
+    assert r.status_code == 400
+
+
+def test_patch_facility_county_enables_matching(client):
+    from app.schemas import BedNeeds
+    _import(client)
+    needs = BedNeeds(sex="female", county="Orange")
+    with Session(client.engine) as s:
+        assert not [o for o in service.find_matches(s, needs, limit=50) if o.site == "RC Test"]
+    r = client.patch("/api/facilities/rc-test", json={"county": "Orange"})
+    assert r.status_code == 200 and r.json()["county"] == "Orange"
+    with Session(client.engine) as s:
+        assert [o for o in service.find_matches(s, needs, limit=50) if o.site == "RC Test"]
+    assert client.patch("/api/facilities/nope", json={"county": "x"}).status_code == 404
+
+
+def test_bed_detail_has_stay_extra(client):
+    _import(client)
+    d = client.get("/api/beds/rc-test-101-a").json()
+    assert d["bed"]["stay"]["first_name"] == "Alpha" and d["bed"]["status"] == "occupied"
+    assert d["current_stay"]["extra"]["PETS"] == "No" and d["current_stay"]["status"] == "active"
+    assert client.get("/api/beds/rc-test-101-b").json()["current_stay"] is None
+    assert client.get("/api/beds/nope").status_code == 404
+

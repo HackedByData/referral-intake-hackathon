@@ -19,6 +19,7 @@ class Settings:
     ocr_concurrency: int
     rules_concurrency: int
     criteria_path: Path
+    seed_mode: str = "poc"  # poc | demo | none
 
     @property
     def cache_dir(self) -> Path:
@@ -44,4 +45,5 @@ def get_settings() -> Settings:
         ocr_concurrency=int(os.getenv("OCR_CONCURRENCY", "8")),
         rules_concurrency=int(os.getenv("RULES_CONCURRENCY", "8")),
         criteria_path=ROOT / "criteria" / "admission-criteria.json",
+        seed_mode=os.getenv("SEED_MODE", "poc").strip().lower(),
     )
