@@ -1,0 +1,86 @@
+"""Case summary + parallel rule-group evaluation with Claude. Every rule gets exactly one result."""
+import asyncio
+import logging
+import time
+
+from app.llm import LLMError
+from app.rules.criteria import Criteria
+from app.rules.prompts import EVAL_SYSTEM, KNOWN_GAPS, RULES_TASK, SUMMARY_TASK
+from app.schemas import CaseSummary, PacketText, Rule, RuleGroupOutput, RuleResult
+
+log = logging.getLogger(__name__)
+SPLIT_THRESHOLD = 6
+
+
+def packet_block(packet: PacketText, criteria: Criteria) -> dict:
+    """Shared, cached prefix: identical bytes for every call on the same packet."""
+    text = (f"<packet>\n{packet.to_markdown()}\n</packet>\n\n"
+            f"<precedence>\n{criteria.precedence}\n</precedence>\n\n"
+            f"<known_gaps>\n{KNOWN_GAPS}\n</known_gaps>")
+    return {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
+
+
+def _rule_lines(rules: list[Rule]) -> str:
+    return "\n".join(f"- {r.id} [{r.kind}] ({r.section}): {r.text}" for r in rules)
+
+
+async def summarize(llm, packet: PacketText, criteria: Criteria) -> CaseSummary:
+    checklist = _rule_lines(criteria.checklist())
+    content = [packet_block(packet, criteria), {"type": "text", "text": SUMMARY_TASK.format(checklist=checklist)}]
+    return await llm.parse(system=EVAL_SYSTEM, content=content, output=CaseSummary, effort="high", max_tokens=16000)
+
+
+def _ensure_coverage(rules: list[Rule], results: list[RuleResult]) -> list[RuleResult]:
+    wanted = {r.id for r in rules}
+    by_id: dict[str, RuleResult] = {}
+    for r in results:
+        if r.rule_id not in wanted:
+            log.warning("Dropping result for unknown rule id %s", r.rule_id)
+        elif r.rule_id not in by_id:
+            by_id[r.rule_id] = r
+    return [by_id.get(rule.id) or RuleResult(rule_id=rule.id, status="unknown", confidence="low",
+                                             reasoning="Not evaluated by the model; check this rule by hand.")
+            for rule in rules]
+
+
+async def evaluate_group(llm, packet: PacketText, criteria: Criteria, group: str, rules: list[Rule],
+                         _depth: int = 0) -> list[RuleResult]:
+    content = [packet_block(packet, criteria),
+               {"type": "text", "text": RULES_TASK.format(group=group, rules=_rule_lines(rules))}]
+    try:
+        out = await llm.parse(system=EVAL_SYSTEM, content=content, output=RuleGroupOutput,
+                              effort="high", max_tokens=20000)
+        return _ensure_coverage(rules, out.results)
+    except LLMError as e:
+        if len(rules) > SPLIT_THRESHOLD and _depth == 0:
+            log.warning("Group %s failed (%s); splitting in half and retrying", group, e)
+            mid = len(rules) // 2
+            a, b = await asyncio.gather(
+                evaluate_group(llm, packet, criteria, f"{group}-1", rules[:mid], _depth + 1),
+                evaluate_group(llm, packet, criteria, f"{group}-2", rules[mid:], _depth + 1))
+            return a + b
+        log.error("Group %s failed: %s", group, e)
+        return _ensure_coverage(rules, [])
+
+
+def superseded_results(criteria: Criteria) -> list[RuleResult]:
+    return [RuleResult(rule_id=r.id, status="not_applicable", confidence="high",
+                       reasoning=f"Superseded by {r.superseded_by}: IHH's internal admission criteria win over the referral form.")
+            for r in criteria.superseded()]
+
+
+async def evaluate_packet(llm, packet: PacketText, criteria: Criteria,
+                          concurrency: int = 8) -> tuple[CaseSummary, list[RuleResult], dict[str, float]]:
+    t0 = time.perf_counter()
+    summary = await summarize(llm, packet, criteria)  # first: warms the prompt cache
+    t1 = time.perf_counter()
+    sem = asyncio.Semaphore(concurrency)
+
+    async def run(group: str, rules: list[Rule]) -> list[RuleResult]:
+        async with sem:
+            return await evaluate_group(llm, packet, criteria, group, rules)
+
+    groups = criteria.groups()
+    chunks = await asyncio.gather(*(run(g, rules) for g, rules in groups.items() if rules))
+    results = [r for chunk in chunks for r in chunk] + superseded_results(criteria)
+    return summary, results, {"summary": t1 - t0, "rules": time.perf_counter() - t1}
