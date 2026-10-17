@@ -17,3 +17,17 @@ def test_score_table_has_no_quotes_and_totals():
     md = score(rows, {"R01": "deny", "R02": "approve", "R03": "approve"})
     assert "| R01 | deny | deny | match | MOB-3 |" in md
     assert "False approvals: 0" in md and "False denials: 1" in md and "Needs review: 1" in md
+
+
+def test_error_and_no_truth_and_false_approve():
+    assert outcome("?", "approve") == "no ground truth"
+    assert outcome("deny", "error") == "ERROR"
+    rows = [
+        {"packet_id": "R04", "decision": "approve", "deciding_rules": [], "review_rules": [], "seconds": 1.0},
+        {"packet_id": "R05", "decision": "error", "deciding_rules": [], "review_rules": [], "seconds": 0.0},
+        {"packet_id": "R06", "decision": "deny", "deciding_rules": [], "review_rules": [], "seconds": 1.0},
+    ]
+    md = score(rows, {"R04": "deny", "R05": "approve"})
+    assert "False approvals: 1" in md
+    assert "| ERROR |" in md and "Errors: 1" in md
+    assert "No ground truth: 1" in md
