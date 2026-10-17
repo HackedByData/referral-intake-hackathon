@@ -105,6 +105,21 @@ def test_approve_without_bed_stays_approve_with_no_bed_reason():
     assert "no matching bed" in rec.headline
 
 
+def test_no_bed_with_county_unknown_is_county_needed():
+    from app.schemas import BedNeeds
+    s = make_summary(bed_needs=BedNeeds(sex="male", county=None))
+    rec = decide(RULES, results(), s, [])
+    assert rec.decision == "approve" and rec.held_bed is None
+    assert [r.kind for r in rec.review_reasons] == ["county_needed"]
+    assert rec.headline == "Recommend approve: eligible; confirm county to hold a bed"
+    assert node(rec, "bed").explanation == "County needed to match a bed."
+
+
+def test_no_bed_with_county_known_stays_no_bed():
+    rec = decide(RULES, results(), make_summary(), [])
+    assert [r.kind for r in rec.review_reasons] == ["no_bed"]
+
+
 def test_conflict_on_flagged_rule_adds_reason_and_ignored_otherwise():
     conflict = Conflict(topic="Walking distance", statements=[Evidence(page=1, quote="a"), Evidence(page=2, quote="b")],
                         related_rule_ids=["MOB-3"], why_it_matters="Mobility rule")

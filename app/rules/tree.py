@@ -139,14 +139,20 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     # Bed node
     held = None
     alternatives: list[BedOption] = []
+    county_needed = False
     if decision != "deny":
         if bed_options:
             held, alternatives = bed_options[0], bed_options[1:]
+        elif summary.bed_needs.county is None:
+            county_needed = True
+            reasons.append(ReviewReason(kind="county_needed", rule_ids=[],
+                                        detail="Patient county not confirmed; confirm the county to match a bed."))
         else:
             reasons.append(ReviewReason(kind="no_bed", rule_ids=[], detail="No available bed matches this patient's needs."))
     steps.append(TreeStep(node="bed", outcome="clear" if (held or decision == "deny") else "triggered",
                           rule_ids=[], explanation=f"Held bed {held.bed_id}." if held else
-                          ("Not applicable (deny)." if decision == "deny" else "No matching bed available.")))
+                          ("Not applicable (deny)." if decision == "deny" else
+                           "County needed to match a bed." if county_needed else "No matching bed available.")))
 
     if decision == "deny":
         hits = excl + must_fail or gen
@@ -159,7 +165,8 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
     else:
         top = [_reason_line(res[i]) for i in APPROVE_HIGHLIGHTS if i in res and res[i].status == "pass" and _verified(res[i])][:3]
         headline = (f"Recommend approve: meets admission criteria; bed {held.label} in room {held.room} held"
-                    if held else "Recommend approve: eligible, but no matching bed available")
+                    if held else "Recommend approve: eligible; confirm county to hold a bed" if county_needed
+                    else "Recommend approve: eligible, but no matching bed available")
 
     return Recommendation(decision=decision, headline=headline, top_reasons=top, review_reasons=reasons,
                           hospital_questions=questions, tree=steps, held_bed=held, alternative_beds=alternatives)
