@@ -6,8 +6,8 @@ Referral intake and bed management for Illumination Health + Home (IHH) recupera
 
 > For IHH referral coordinators: upload a faxed referral packet, get a cited recommendation and a held bed in minutes, and decide with one click.
 
-**Team:** [team name]
-**Members:** [names]
+**Team:** RAFT
+**Members:** Devin McCaw, Fernanda Tamayo, Aditi Bhavsar
 **Challenge:** 1 Referral intake
 **Built at:** Orange County | Claude Impact Lab, October 17, 2026, with Illumination Health + Home
 
