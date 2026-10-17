@@ -138,6 +138,9 @@
       top_reasons: needs
         ? ["MRSA swab result is not in the packet [INF-1]", "Home health for IV antibiotics is not confirmed [OTH-3]", "Pages disagree on walking distance [MOB-3]"]
         : ["Walks 150 ft with walker (p.3) [MOB-3]", "Unsheltered and needs recuperative care (p.1) [GEN-1]", "No exclusions found"],
+      confidence: needs
+        ? { score: 58, level: "medium", factors: ["38 decision rules checked", "Average AI confidence on those rules: 82%", "5 required fact(s) not found in the packet"], note: "The AI's self-reported rule confidence combined with the quote checks; not a calibrated probability." }
+        : { score: 86, level: "high", factors: ["38 decision rules checked", "Average AI confidence on those rules: 90%"], note: "The AI's self-reported rule confidence combined with the quote checks; not a calibrated probability." },
       review_reasons: needs ? [
         { kind: "missing_info", rule_ids: ["INF-1"], detail: "MRSA swab result is not in the packet" },
         { kind: "missing_info", rule_ids: ["OTH-3", "ID-3"], detail: "Home health for IV antibiotics is not confirmed" },
@@ -203,8 +206,8 @@
     if (r.final) {
       const t = (Date.now() - r.started) / 1000;
       if (t > 10) { Object.assign(r.view, r.final); delete r.final; }
-      else if (t > 6) Object.assign(r.view, { status: "analyzing", progress: "Checking 155 rules" });
-      else Object.assign(r.view, { status: "transcribing", progress: `Transcribing page ${Math.min(4, Math.ceil(t / 1.5))} of 4` });
+      else if (t > 6) Object.assign(r.view, { status: "analyzing", progress: `Checking admission criteria (${Math.min(8, Math.ceil((t - 6) * 2))} of 8 groups)`, progress_percent: Math.round(60 + (t - 6) * 9), eta_seconds: Math.max(1, Math.round(10 - t)) });
+      else Object.assign(r.view, { status: "transcribing", progress: `Reading page ${Math.min(4, Math.ceil(t / 1.5))} of 4`, progress_percent: Math.round(t * 10), eta_seconds: Math.round(10 - t) });
     }
     if (!sub && method === "GET") return respond(200, r.view);
     if (sub === "details") return r.final ? respond(409, { detail: "Not analyzed yet" }) : respond(200, r.details);

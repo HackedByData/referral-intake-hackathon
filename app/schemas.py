@@ -173,6 +173,14 @@ class BedOption(BaseModel):
     match_notes: list[str] = []
 
 
+class ConfidenceSummary(BaseModel):
+    score: int  # 0-100
+    level: Literal["high", "medium", "low"]
+    factors: list[str] = []
+    note: str = ("The AI's self-reported rule confidence combined with the quote checks; "
+                 "not a calibrated probability.")
+
+
 class Recommendation(BaseModel):
     decision: Decision
     headline: str
@@ -183,6 +191,7 @@ class Recommendation(BaseModel):
     held_bed: BedOption | None = None
     alternative_beds: list[BedOption] = []
     precedents: list["Precedent"] = []
+    confidence: ConfidenceSummary | None = None
 
 
 class AnalysisResult(BaseModel):
@@ -253,6 +262,8 @@ class ReferralListItem(BaseModel):
 
 class ReferralView(ReferralListItem):
     progress: str | None = None
+    progress_percent: int | None = None  # 0-100 while processing
+    eta_seconds: int | None = None       # estimated seconds until analysis is complete
     error: str | None = None
     one_liner: str | None = None
     recommendation: Recommendation | None = None

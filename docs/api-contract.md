@@ -112,7 +112,9 @@ interface ReferralListItem {
 }
 
 interface ReferralView extends ReferralListItem {
-  progress?: string;          // "Transcribing page 12 of 34"
+  progress?: string;          // "Reading page 12 of 34", "Checking admission criteria (5 of 8 groups)"
+  progress_percent?: number;  // v3: 1-99 while processing, computed at request time (keeps moving)
+  eta_seconds?: number;       // v3: estimated seconds left, from past run timings
   error?: string;             // when status == "failed"
   one_liner?: string;
   recommendation?: Recommendation;
@@ -140,6 +142,12 @@ interface Recommendation {
   tree: TreeStep[];                      // decision path, in evaluation order
   held_bed?: BedOption;
   alternative_beds: BedOption[];
+  confidence?: {               // v3: AI self-reported rule confidence + quote checks; NOT a calibrated probability
+    score: number;             // 0-100
+    level: "high" | "medium" | "low";
+    factors: string[];         // why: rules checked, missing facts, unmatched quotes, contradictions
+    note: string;
+  };
   precedents: Precedent[];               // v3: similar past cases where staff-approved lessons say the coordinator differed from the AI
 }
 
@@ -481,6 +489,7 @@ interface LessonReview { reviewer: string; note?: string; }  // a non-empty note
 - **Census import**: `POST /api/census/import` with IHH's workbook; show the per-sheet report (skipped rows and conflicts). Re-importing is safe.
 
 ## Changelog
+- v3.1 (2026-10-17): `ReferralView.progress_percent` / `eta_seconds` (live progress bar) and `Recommendation.confidence` (confidence gradient). The UI no longer asks for a name; decisions are recorded as "Coordinator" until sign-in exists.
 - v3 (2026-10-17): knowledge core (additive): `/api/knowledge` list/export/approve/reject/retire, `LessonView`, `LessonReview`, `CaseProfile`, `Precedent`, `Recommendation.precedents`, `TreeStep.node = "knowledge"`, `ReferralDetails.knowledge_used`. See §9.
 - v1 (2026-10-17): initial contract.
 - v2 (2026-10-17): census-backed BMS + county matching (additive): facilities endpoints, bed detail with patient info, census import, county confirm, `needs_cleaning` bed status, `county_needed` review reason, `ReferralView.county`, `BedView.site_id/county/program_type/stay`, `BedSummary.needs_cleaning`. See §8.

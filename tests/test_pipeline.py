@@ -45,7 +45,9 @@ def all_pass_evaluate(results_status="pass", plan="CalOptima"):
         ev = [Evidence(page=4, quote="Health plan: CalOptima")] if plan else []
         return make_summary(health_plan=plan, health_plan_evidence=ev)
 
-    async def evaluate_rules(llm, packet, criteria, concurrency=8, guidance=None):
+    async def evaluate_rules(llm, packet, criteria, concurrency=8, guidance=None, on_group_done=None):
+        if on_group_done:
+            on_group_done(1, 1)
         results = [RuleResult(rule_id=r.id, status="not_applicable", reasoning="n/a", confidence="high")
                    for r in criteria.rules]
         for r in results:
@@ -135,3 +137,23 @@ async def test_hold_failure_clears_held_bed_and_adds_no_bed_reason(engine, monke
         rec = AnalysisResult.model_validate_json(s.get(Referral, "R1").result_json).recommendation
         assert rec.held_bed is None
         assert any(r.kind == "no_bed" for r in rec.review_reasons)
+
+
+async def test_progress_is_reported_and_cleared_when_done(engine, monkeypatch):
+    from app.workflow import pipeline as pl
+    seen = []
+    orig = pl.Pipeline._update
+
+    def spy(self, referral_id, **fields):
+        if "progress_json" in fields and fields["progress_json"]:
+            seen.append(fields["progress_json"])
+        return orig(self, referral_id, **fields)
+
+    monkeypatch.setattr(pl.Pipeline, "_update", spy)
+    await pipeline(engine).run("R1")
+    import json
+    phases = [json.loads(p)["phase"] for p in seen]
+    assert phases[0] == "pages" and "summary" in phases and phases[-1] == "rules"
+    assert json.loads(seen[-1])["groups_done"] == 1  # the fake reports one finished group
+    with Session(engine) as s:
+        assert s.get(Referral, "R1").progress_json is None

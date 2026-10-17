@@ -1,6 +1,7 @@
 """Deterministic decision tree over verified rule results. Spec section 7.5. Pure function, no I/O."""
 from app.schemas import (
-    BedOption, CaseSummary, HospitalQuestion, Recommendation, ReviewReason, Rule, RuleResult, TreeStep,
+    BedOption, CaseSummary, ConfidenceSummary, HospitalQuestion, Recommendation, ReviewReason, Rule, RuleResult,
+    TreeStep,
 )
 
 GEN_IDS = ("GEN-1", "GEN-2", "GEN-3")
@@ -168,5 +169,42 @@ def decide(rules: list[Rule], results: list[RuleResult], summary: CaseSummary,
                     if held else "Recommend approve: eligible; confirm county to hold a bed" if county_needed
                     else "Recommend approve: eligible, but no matching bed available")
 
+    confidence = _confidence(decision, excl + must_fail, res, kind, reasons)
     return Recommendation(decision=decision, headline=headline, top_reasons=top, review_reasons=reasons,
-                          hospital_questions=questions, tree=steps, held_bed=held, alternative_beds=alternatives)
+                          hospital_questions=questions, tree=steps, held_bed=held, alternative_beds=alternatives,
+                          confidence=confidence)
+
+
+RULE_CONFIDENCE = {"high": 1.0, "medium": 0.65, "low": 0.3}
+DECISION_KINDS = ("must", "exclude", "conditional", "document")
+
+
+def _confidence(decision: str, deciding: list[RuleResult], res: dict[str, RuleResult], kind: dict[str, str],
+                reasons: list[ReviewReason]) -> ConfidenceSummary:
+    """Deterministic summary of how sure the AI is: its own rule-level confidence, minus penalties for missing facts,
+    unmatched quotes and contradictions. Not a calibrated probability."""
+    if decision == "deny" and deciding:
+        basis = deciding
+    else:
+        basis = [r for r in res.values() if kind[r.rule_id] in DECISION_KINDS
+                 and r.status in ("pass", "fail", "unknown")]
+    base = sum(RULE_CONFIDENCE[r.confidence] for r in basis) / len(basis) if basis else 0.5
+    unknown = sum(1 for r in res.values() if kind[r.rule_id] in DECISION_KINDS and r.status == "unknown")
+    unverified = sum(1 for rr in reasons if rr.kind == "unverified_evidence")
+    conflicts = sum(1 for rr in reasons if rr.kind == "conflict")
+    penalty = 8 * unverified + 6 * conflicts + (0 if decision == "deny" else min(30, 2 * unknown))
+    score = max(5, min(99, round(base * 100 - penalty)))
+    level = "high" if score >= 75 else "medium" if score >= 50 else "low"
+    if decision == "deny" and deciding:
+        factors = [f"Denial rests on {len(deciding)} rule(s) with verified quotes: "
+                   f"{', '.join(r.rule_id for r in deciding[:6])}"]
+    else:
+        factors = [f"{len(basis)} decision rules checked"]
+    factors.append(f"Average AI confidence on those rules: {round(base * 100)}%")
+    if unknown and decision != "deny":
+        factors.append(f"{unknown} required fact(s) not found in the packet")
+    if unverified:
+        factors.append(f"{unverified} finding(s) whose quote was not found on the cited page")
+    if conflicts:
+        factors.append(f"{conflicts} contradiction(s) between pages")
+    return ConfidenceSummary(score=score, level=level, factors=factors)

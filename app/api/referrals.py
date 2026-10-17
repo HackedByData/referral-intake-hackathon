@@ -1,4 +1,5 @@
 """Referral intake HTTP routes."""
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from app.schemas import (
 )
 from app.workflow import audit
 from app.workflow.decisions import DecisionError, apply_decision, get_kipu
+from app.workflow import progress
 from app.workflow.models import Referral
 from app.workflow.pipeline import Pipeline, get_pipeline
 
@@ -51,8 +53,15 @@ def _list_item(ref: Referral) -> dict:
 
 def _view(ref: Referral) -> ReferralView:
     result = AnalysisResult.model_validate_json(ref.result_json) if ref.result_json else None
+    prog = {}
+    if ref.progress_json and ref.status in ("uploaded", "transcribing", "analyzing"):
+        try:  # computed at read time so the countdown keeps moving between pipeline events
+            prog = progress.estimate(json.loads(ref.progress_json))
+        except Exception:
+            prog = {}
     return ReferralView(
         **_list_item(ref), progress=ref.progress, error=ref.error,
+        progress_percent=prog.get("percent"), eta_seconds=prog.get("eta_seconds"),
         one_liner=result.summary.one_liner if result else None,
         recommendation=result.recommendation if result else None,
         coordinator_decision=CoordinatorDecisionRecord.model_validate_json(ref.decision_json) if ref.decision_json else None,

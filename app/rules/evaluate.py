@@ -1,5 +1,6 @@
 """Case summary + parallel rule-group evaluation with Claude. Every rule gets exactly one result."""
 import asyncio
+from collections.abc import Callable
 import logging
 import time
 
@@ -85,15 +86,25 @@ def superseded_results(criteria: Criteria) -> list[RuleResult]:
 
 
 async def evaluate_rules(llm, packet: PacketText, criteria: Criteria, concurrency: int = 8,
-                         guidance: dict[str, list[str]] | None = None) -> list[RuleResult]:
+                         guidance: dict[str, list[str]] | None = None,
+                         on_group_done: Callable[[int, int], None] | None = None) -> list[RuleResult]:
     sem = asyncio.Semaphore(concurrency)
+    groups = {g: rules for g, rules in criteria.groups().items() if rules}
+    done = 0
 
     async def run(group: str, rules: list[Rule]) -> list[RuleResult]:
+        nonlocal done
         async with sem:
-            return await evaluate_group(llm, packet, criteria, group, rules, guidance=guidance)
+            out = await evaluate_group(llm, packet, criteria, group, rules, guidance=guidance)
+        done += 1
+        if on_group_done:
+            try:  # progress reporting must never break the analysis
+                on_group_done(done, len(groups))
+            except Exception:
+                log.exception("Progress callback failed")
+        return out
 
-    groups = criteria.groups()
-    chunks = await asyncio.gather(*(run(g, rules) for g, rules in groups.items() if rules))
+    chunks = await asyncio.gather(*(run(g, rules) for g, rules in groups.items()))
     return [r for chunk in chunks for r in chunk] + superseded_results(criteria)
 
 

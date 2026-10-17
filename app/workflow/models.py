@@ -10,6 +10,7 @@ class Referral(SQLModel, table=True):
     packet_hash: str | None = None
     status: str = "uploaded"
     progress: str | None = None
+    progress_json: str | None = None  # {"stage","percent","eta_seconds","detail"} while processing
     error: str | None = None
     created_at: NaiveDatetime
     updated_at: NaiveDatetime

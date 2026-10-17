@@ -45,8 +45,6 @@ a { color: var(--primary); }
 .brand-text { display: flex; flex-direction: column; }
 .brand-name { font-size: 1.6rem; font-weight: 700; line-height: 1.1; letter-spacing: .01em; }
 .brand-sub { color: #c9d4dc; font-size: .9rem; }
-.whoami { display: flex; align-items: center; gap: 10px; font-weight: 700; }
-.whoami input { width: 16rem; max-width: 60vw; }
 
 .steps {
   display: flex; gap: 8px; padding: 12px 24px; background: var(--surface);
@@ -128,6 +126,16 @@ textarea { min-height: 110px; width: 100%; resize: vertical; }
 .dropzone .file-name { font-weight: 700; font-size: 1.15rem; }
 .progress-track { height: 18px; border-radius: 9px; background: var(--off-bg); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); transition: width .6s ease; }
+.progress-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 1.05rem; }
+.confidence { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--off-bg); }
+.confidence-head { margin-bottom: 8px; }
+.confidence-track { position: relative; height: 14px; border-radius: 7px;
+  background: linear-gradient(90deg, #c8372d, #e2a72e 50%, #2e8b57); }
+.confidence-marker { position: absolute; top: -5px; width: 6px; height: 24px; border-radius: 3px;
+  background: var(--ink); box-shadow: 0 0 0 2px #fff; }
+.confidence-scale { display: flex; justify-content: space-between; font-size: .85rem; margin-top: 4px; opacity: .8; }
+.confidence-factors { margin: 8px 0 0; font-size: .95rem; }
+.confidence-note { font-size: .85rem; margin-top: 6px; }
 .progress-fill.indeterminate { width: 35% !important; animation: slide 1.6s ease-in-out infinite; }
 @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 @media (prefers-reduced-motion: reduce) { .progress-fill.indeterminate { animation: none; width: 100% !important; opacity: .5; } }

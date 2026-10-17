@@ -42,7 +42,9 @@ def make_pipeline(engine, plan="CalOptima", seen=None):
         s = make_summary(health_plan=plan, health_plan_evidence=[Evidence(page=4, quote=f"Health plan: {plan}")])
         return s.model_copy(update={"bed_needs": s.bed_needs.model_copy(update={"county": None})})  # model never fills it
 
-    async def evaluate_rules(llm, packet, criteria, concurrency=8, guidance=None):
+    async def evaluate_rules(llm, packet, criteria, concurrency=8, guidance=None, on_group_done=None):
+        if on_group_done:
+            on_group_done(1, 1)
         if seen is not None:
             seen.append(guidance)
         out = [RuleResult(rule_id=r.id, status="not_applicable", reasoning="n/a", confidence="high")

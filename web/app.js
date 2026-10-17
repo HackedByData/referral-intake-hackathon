@@ -129,7 +129,8 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function coordinatorName() { return document.getElementById("coordinator").value.trim(); }
+// No sign-in yet: decisions are recorded as "Coordinator" until a login replaces this.
+function coordinatorName() { return "Coordinator"; }
 
 async function copyText(text, btn) {
   try { await navigator.clipboard.writeText(text); }
@@ -334,14 +335,40 @@ function renderProcessing(ref) {
         h("button", { class: "btn btn-primary btn-big", onclick: retry }, "Try again"),
         h("button", { class: "btn btn-big", onclick: () => { S.r = fresh(); setTab("upload"); } }, "Upload a different packet")));
   }
-  const m = (ref.progress || "").match(/(\d+)\s+of\s+(\d+)/);
-  const pct = m ? Math.round((+m[1] / +m[2]) * 100) : null;
+  // Server sends progress_percent + eta_seconds; fall back to "page N of M" text, then to an animated bar.
+  let pct = typeof ref.progress_percent === "number" ? ref.progress_percent : null;
+  if (pct === null) { const m = (ref.progress || "").match(/(\d+)\s+of\s+(\d+)/); if (m) pct = Math.round((+m[1] / +m[2]) * 100); }
+  if (pct !== null) { S.r.maxPct = Math.max(S.r.maxPct || 0, pct); pct = S.r.maxPct; }  // never move backwards
   return h("section", { class: "panel", "aria-live": "polite" },
     h("h1", {}, "Reading the packet"),
     h("p", {}, h("strong", {}, ref.filename), "  ", badge(REFERRAL_STATUS[ref.status][0], "b-info")),
     h("p", { class: "verdict-word", style: "font-size:1.5rem" }, ref.progress || "Starting"),
-    h("div", { class: "progress-track" }, h("div", { class: `progress-fill ${pct === null ? "indeterminate" : ""}`, style: `width:${pct || 0}%` })),
-    h("p", { class: "muted", style: "margin-top:12px" }, "This usually takes 2 to 5 minutes. You can keep this page open; the results open by themselves."));
+    h("div", { class: "progress-track", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": pct === null ? null : String(pct) },
+      h("div", { class: `progress-fill ${pct === null ? "indeterminate" : ""}`, style: `width:${pct || 0}%` })),
+    h("div", { class: "progress-meta" },
+      h("strong", {}, pct === null ? "Working…" : `${pct}%`),
+      h("span", {}, etaText(ref.eta_seconds))),
+    h("p", { class: "muted", style: "margin-top:12px" }, "You can keep this page open; the results open by themselves."));
+}
+
+function etaText(s) {
+  if (typeof s !== "number") return "Estimating time left…";
+  if (s <= 15) return "Finishing up";
+  if (s < 60) return "Less than a minute left";
+  return `About ${Math.round(s / 60)} min left`;
+}
+
+function confidenceBlock(c) {
+  if (!c) return null;
+  const word = { high: "High", medium: "Medium", low: "Low" }[c.level] || c.level;
+  const pos = Math.max(0, Math.min(100, c.score));
+  return h("div", { class: "confidence", "aria-label": `AI confidence ${word}, ${c.score} out of 100` },
+    h("div", { class: "confidence-head" }, h("strong", {}, "AI confidence: "), `${word} (${c.score}/100)`),
+    h("div", { class: "confidence-track", "aria-hidden": "true" },
+      h("div", { class: "confidence-marker", style: `left:calc(${pos}% - 3px)` })),
+    h("div", { class: "confidence-scale", "aria-hidden": "true" }, h("span", {}, "Low"), h("span", {}, "Medium"), h("span", {}, "High")),
+    c.factors && c.factors.length ? h("ul", { class: "confidence-factors" }, c.factors.map((f) => h("li", {}, f))) : null,
+    h("p", { class: "muted confidence-note" }, c.note));
 }
 
 async function retry() {
@@ -402,6 +429,7 @@ function renderVerdict() {
       h("p", {}, r.headline),
       S.r.ref.one_liner ? h("p", { class: "muted" }, S.r.ref.one_liner) : null,
       r.top_reasons.length ? h("ul", {}, r.top_reasons.map((t) => h("li", {}, richText(t)))) : null,
+      confidenceBlock(r.confidence),
       h("p", { class: "verdict-note" }, "This is a recommendation. You make the final decision.")),
     h("div", { class: "rail" },
       h("h3", {}, "Check each table"),
@@ -526,7 +554,6 @@ function renderCounty() {
 async function saveCounty() {
   const county = S.r.countyDraft.trim();
   if (!county) { S.r.countyError = "Type a county first."; render(); return; }
-  if (!coordinatorName()) { S.r.countyError = "Type your name at the top of the page first."; render(); document.getElementById("coordinator").focus(); return; }
   S.r.countyBusy = true; S.r.countyError = null; render();
   try {
     S.r.ref = await api(`/api/referrals/${encodeURIComponent(S.r.id)}/county`, { method: "POST", json: { county, coordinator: coordinatorName() } });
@@ -841,7 +868,7 @@ function renderDecide() {
           h("td", {}, c[k] ? badge("Confirmed", "b-ok") : badge("Not checked yet", "b-off")),
           h("td", {}, c[k] ? null : h("button", { class: "btn btn-small", onclick: () => { setTab("review"); scrollToPanel(k); } }, "Go to table")))),
         h("tr", {}, h("td", { class: "key" }, "Bed to assign"), h("td", { colspan: 2 }, bed ? bedName(bed, true) : unknown())),
-        h("tr", {}, h("td", { class: "key" }, "Your name"), h("td", { colspan: 2 }, name || h("span", { class: "why-disabled" }, "Type your name at the top of the page."))),
+        h("tr", {}, h("td", { class: "key" }, "Recorded as"), h("td", { colspan: 2 }, name, h("span", { class: "muted" }, " (sign-in coming soon)"))),
         Object.keys(S.r.overrides).length ? h("tr", {}, h("td", { class: "key" }, "Rules you changed"), h("td", { colspan: 2 }, Object.keys(S.r.overrides).join(", "))) : null)),
       h("label", { style: "display:block;margin-top:20px" }, h("strong", {}, "Notes (optional)"),
         h("textarea", { value: S.r.notes, oninput: (e) => (S.r.notes = e.target.value), placeholder: "Anything the team should know about this decision" })),
@@ -1169,12 +1196,6 @@ async function importCensus(e) {
 
 // ---------- Boot ----------
 (function boot() {
-  const who = document.getElementById("coordinator");
-  try { who.value = localStorage.getItem("ihh.coordinator") || ""; } catch { /* storage blocked */ }
-  who.addEventListener("input", () => {
-    try { localStorage.setItem("ihh.coordinator", who.value); } catch { /* storage blocked */ }
-    if (S.tab === "decide") render();
-  });
   for (const btn of document.querySelectorAll(".step")) btn.addEventListener("click", () => setTab(btn.dataset.tab));
   if (DEMO) {
     const b = document.getElementById("banner");

@@ -1,4 +1,5 @@
 """Orchestrates one referral: transcribe -> summarize -> county -> evaluate (+ approved-lesson guidance) -> verify -> decide -> hold bed. Runs as a background task."""
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ from app.rules.prompts import PROMPT_VERSION
 from app.rules.tree import decide
 from app.rules.verify import verify_results, verify_summary
 from app.schemas import AnalysisResult, ReviewReason
-from app.workflow import audit
+from app.workflow import audit, progress
 from app.workflow.models import Referral
 
 log = logging.getLogger(__name__)
@@ -53,21 +54,38 @@ class Pipeline:
             s.add(ref)
             s.commit()
 
+    def _report(self, referral_id: str, state: dict, **changes) -> None:
+        """Store the raw progress state; the API computes percent and time left when it is read."""
+        try:
+            state.update(changes)
+            detail = progress.estimate(state)["detail"]
+            self._update(referral_id, progress=detail, progress_json=json.dumps(state))
+        except Exception:
+            log.exception("Progress update failed for %s", referral_id)
+
     async def run(self, referral_id: str) -> None:
         t0 = time.perf_counter()
+        state: dict = progress.new_state(progress.Estimates())
         try:
             with Session(self.engine_getter()) as s:
                 pdf_path = Path(s.get(Referral, referral_id).pdf_path)
-            self._update(referral_id, status="transcribing", progress="Transcribing pages", error=None)
+                try:
+                    state = progress.new_state(progress.historical_estimates(s))
+                except Exception:
+                    log.exception("Could not load timing history; using defaults")
+            self._update(referral_id, status="transcribing", progress="Reading pages", error=None)
+            self._report(referral_id, state)
             packet = await self.transcribe(
                 self.llm, pdf_path, self.settings.cache_dir, concurrency=self.settings.ocr_concurrency,
-                on_progress=lambda d, n: self._update(referral_id, progress=f"Transcribing page {d} of {n}"))
+                on_progress=lambda d, n: self._report(referral_id, state, pages_done=d, pages_total=n))
             t1 = time.perf_counter()
-            self._update(referral_id, status="analyzing", packet_hash=packet.packet_hash,
-                         progress="Checking admission criteria")
+            self._update(referral_id, status="analyzing", packet_hash=packet.packet_hash)
+            self._report(referral_id, state, stage="analyzing", phase="summary", phase_t0=time.time())
             t_sum = time.perf_counter()
             summary = await self.summarize(self.llm, packet, self.criteria)
             summary = verify_summary(summary, packet)
+            n_groups = sum(1 for rs in self.criteria.groups().values() if rs)
+            self._report(referral_id, state, phase="rules", phase_t0=time.time(), groups_total=n_groups)
             t_rules = time.perf_counter()
             used: list[int] = []
             additions, learned = {}, {}
@@ -93,8 +111,9 @@ class Pipeline:
                     used += gids
             except Exception:
                 log.exception("Rule guidance lookup failed for %s; continuing without it", referral_id)
-            results = await self.evaluate_rules(self.llm, packet, self.criteria,
-                                                concurrency=self.settings.rules_concurrency, guidance=guidance)
+            results = await self.evaluate_rules(
+                self.llm, packet, self.criteria, concurrency=self.settings.rules_concurrency, guidance=guidance,
+                on_group_done=lambda d, n: self._report(referral_id, state, groups_done=d, groups_total=n))
             results = verify_results(results, packet)
             timings = {"summary": t_rules - t_sum, "rules": time.perf_counter() - t_rules}
             profile = build_profile(
@@ -124,8 +143,8 @@ class Pipeline:
                     knowledge_used=sorted(set(used)),
                     timings={"transcribe": t1 - t0, **timings, "total": time.perf_counter() - t0})
                 ref = s.get(Referral, referral_id)
-                ref.result_json, ref.status, ref.progress, ref.updated_at = (
-                    result.model_dump_json(), "ready_for_review", None, _now())
+                ref.result_json, ref.status, ref.progress, ref.progress_json, ref.updated_at = (
+                    result.model_dump_json(), "ready_for_review", None, None, _now())
                 s.add(ref)
                 s.commit()
                 try:
@@ -138,7 +157,8 @@ class Pipeline:
                              knowledge_used=result.knowledge_used, seconds=round(time.perf_counter() - t0, 1))
         except Exception as e:
             log.exception("Pipeline failed for %s", referral_id)
-            self._update(referral_id, status="failed", progress=None, error=f"{type(e).__name__}: {e}")
+            self._update(referral_id, status="failed", progress=None, progress_json=None,
+                         error=f"{type(e).__name__}: {e}")
             with Session(self.engine_getter()) as s:
                 audit.record(s, "analysis_failed", referral_id=referral_id, error=str(e))
 
