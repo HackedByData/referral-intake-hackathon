@@ -1,0 +1,116 @@
+import pymupdf
+import pytest
+from fastapi.testclient import TestClient
+from sqlmodel import Session
+
+from app.db import make_engine, set_engine
+from app.workflow.models import Referral
+from app.workflow.pipeline import get_pipeline
+from tests.factories import make_analysis, make_bed_option
+
+
+class FakePipeline:
+    def __init__(self, engine):
+        self.engine = engine
+
+    async def run(self, referral_id):
+        with Session(self.engine) as s:
+            from app.beds import service
+            service.hold(s, "demo-site-a-102-a", referral_id, 4)
+            ref = s.get(Referral, referral_id)
+            ref.status = "ready_for_review"
+            ref.packet_hash = "testhash"
+            ref.result_json = make_analysis("approve", make_bed_option("demo-site-a-102-a")).model_dump_json()
+            s.add(ref)
+            s.commit()
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    engine = make_engine("sqlite://")
+    set_engine(engine)
+    from app.main import app
+    app.dependency_overrides[get_pipeline] = lambda: FakePipeline(engine)
+    with TestClient(app) as c:  # runs lifespan: init_db + seed
+        yield c
+    app.dependency_overrides.clear()
+
+
+def pdf_bytes() -> bytes:
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "invented test page")
+    return doc.tobytes()
+
+
+def upload(client):
+    return client.post("/api/referrals", files={"file": ("packet.pdf", pdf_bytes(), "application/pdf")})
+
+
+def test_health(client):
+    assert client.get("/api/health").json()["api_key_configured"] is True
+
+
+def test_upload_runs_pipeline_and_summary_view(client):
+    r = upload(client)
+    assert r.status_code == 202
+    rid = r.json()["id"]
+    view = client.get(f"/api/referrals/{rid}").json()
+    assert view["status"] == "ready_for_review" and view["decision"] == "approve"
+    assert view["recommendation"]["held_bed"]["bed_id"] == "demo-site-a-102-a"
+    assert view["one_liner"].startswith("Adult man")
+    assert [x["id"] for x in client.get("/api/referrals").json()] == [rid]
+
+
+def test_details_join_rule_text(client):
+    rid = upload(client).json()["id"]
+    d = client.get(f"/api/referrals/{rid}/details").json()
+    mob = next(r for r in d["rule_results"] if r["rule_id"] == "MOB-3")
+    assert mob["kind"] == "must" and "100 ft" in mob["text"]
+    assert d["pages"][0]["page"] == 1
+    assert client.get(f"/api/referrals/{rid}/pages/2").json()["markdown"].startswith("PHYSICAL THERAPY")
+    assert client.get(f"/api/referrals/{rid}/pages/99").status_code == 404
+
+
+def test_page_image(client):
+    rid = upload(client).json()["id"]
+    r = client.get(f"/api/referrals/{rid}/pages/1/image")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+
+
+def test_decision_flow_and_conflict(client):
+    rid = upload(client).json()["id"]
+    r = client.post(f"/api/referrals/{rid}/decision", json={"decision": "approve", "coordinator": "C"})
+    assert r.status_code == 200 and r.json()["status"] == "approved"
+    assert r.json()["coordinator_decision"]["agreed_with_ai"] is True
+    again = client.post(f"/api/referrals/{rid}/decision", json={"decision": "approve", "coordinator": "C"})
+    assert again.status_code == 409
+    drafts = client.get(f"/api/referrals/{rid}/drafts").json()
+    assert drafts["kipu_reference"] == f"MOCK-KIPU-{rid}"
+    actions = [e["action"] for e in client.get("/api/audit", params={"referral_id": rid}).json()]
+    assert actions[0] == "uploaded" and actions[-1] == "coordinator_decision"
+
+
+def test_bed_matches(client):
+    rid = upload(client).json()["id"]
+    ids = [o["bed_id"] for o in client.get(f"/api/referrals/{rid}/bed-matches").json()]
+    assert "demo-site-a-102-a" in ids  # own hold still counts as available
+
+
+def test_non_pdf_upload_is_400_and_leaves_no_row(client):
+    r = client.post("/api/referrals", files={"file": ("x.pdf", b"PK\x03\x04 docx", "application/pdf")})
+    assert r.status_code == 400
+    assert client.get("/api/referrals").json() == []
+    r = client.post("/api/referrals", files={"file": ("empty.pdf", b"", "application/pdf")})
+    assert r.status_code == 400
+
+
+def test_upload_without_key_is_503(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    assert upload(client).status_code == 503
+
+
+def test_retry_only_when_failed(client):
+    rid = upload(client).json()["id"]
+    assert client.post(f"/api/referrals/{rid}/retry").status_code == 409
