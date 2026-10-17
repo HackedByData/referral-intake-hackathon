@@ -1,6 +1,6 @@
 """Prompts for case summary and rule evaluation. Bump PROMPT_VERSION whenever any text here changes."""
 
-PROMPT_VERSION = "2026-10-17.1"
+PROMPT_VERSION = "2026-10-17.2"
 
 EVAL_SYSTEM = """You assist a referral coordinator at Illumination Health + Home (IHH). IHH runs recuperative care: short-term medical respite housing for people experiencing homelessness who are leaving the hospital but are too sick to recover on the street. You review a de-identified hospital referral packet against IHH's written admission criteria. A human coordinator makes every final decision. Your job is to find the facts and show your work so they can check it in seconds.
 
@@ -36,7 +36,10 @@ SUMMARY_TASK = """Summarize this packet for the coordinator. Use only the packet
 {checklist}
 - key_findings: up to 8 short facts that matter for eligibility, each ending with its page, e.g. "Walks 150 ft with a front-wheeled walker (p.12)".
 - conflicts: places where pages disagree about something that matters (age, mobility, cognition, living situation, medication plan, infection or isolation status). Each needs at least two evidence items with verbatim quotes and the related rule IDs.
-- bed_needs: sex as documented; wheelchair true only if wheelchair dependent; mobility_aid if any; oxygen true if oxygen is planned after discharge; isolation true if isolation precautions continue at discharge."""
+- bed_needs: sex as documented; wheelchair true only if wheelchair dependent; mobility_aid if any; oxygen true if oxygen is planned after discharge; isolation true if isolation precautions continue at discharge.
+- health_plan: the health plan or payer named in the packet, exactly as written (e.g. on an authorization form or face sheet), with verbatim quotes in health_plan_evidence. Null if none.
+- location_clues: verbatim quotes naming a city or county where the patient lives or is hospitalized. Never use [REDACTED] text.
+- Leave bed_needs.county and suggested_county null; the system fills them."""
 
 RULES_TASK = """Evaluate every rule below for this patient. Return exactly one result per rule ID listed, and no other IDs.
 

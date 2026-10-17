@@ -1,0 +1,17 @@
+{
+  "_about": "Editable. Maps a health plan named in a referral to the county it serves. Only plans that serve exactly one county give a suggestion; multi-county plans list several or none. Coordinators always confirm.",
+  "plans": {
+    "cal optima": ["Orange"],
+    "caloptima": ["Orange"],
+    "la care": ["Los Angeles"],
+    "l a care": ["Los Angeles"],
+    "iehp": ["Riverside", "San Bernardino"],
+    "inland empire health plan": ["Riverside", "San Bernardino"],
+    "health net": [],
+    "molina": [],
+    "anthem": [],
+    "blue shield": [],
+    "blue cross": [],
+    "kaiser": []
+  }
+}
